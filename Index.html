@@ -476,14 +476,14 @@ const DEFAULT_QUESTIONS = [
     examInterval = setInterval(() => {
       secLeft--;
       if (secLeft >= 0) numDisplay.innerText = secLeft + 's';
-    }, 1000);
+    }, 1500);
 
     // Automatischer Sprung nach exakt 15 Sekunden
     clearTimeout(examTimeout);
     examTimeout = setTimeout(() => {
       examIndex++;
       loadNextExamQuestion();
-    }, 10000);
+    }, 15000);
   }
 
   function finishExam() {
