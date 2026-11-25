@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Regeltest Prüfungssimulator</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+      --success: #22c55e;
+      --danger: #ef4444;
+      --border: #334155;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+    .container { width: 100%; max-width: 760px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 16px; padding: 2rem; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5); }
+    
+    h1, h2 { text-align: center; margin-bottom: 1rem; }
+    p.subtitle { text-align: center; color: var(--text-muted); margin-bottom: 2rem; }
+
+    /* Button Styles */
+    .btn-group { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 1.5rem; }
+    .btn { flex: 1; min-width: 140px; padding: 0.9rem 1.2rem; border-radius: 8px; border: none; font-size: 1rem; font-weight: 600; cursor: pointer; transition: 0.2s ease; text-align: center; }
+    .btn-primary { background: var(--accent); color: #000; }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .btn-outline:hover { background: #334155; }
+    .btn-success { background: var(--success); color: #fff; }
+    .btn-danger { background: var(--danger); color: #fff; }
+
+    /* Progress & Timer */
+    .timer-container { width: 100%; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin: 1.5rem 0; }
+    .timer-bar { width: 100%; height: 100%; background: var(--accent); transition: width 0.1s linear; }
+    .timer-bar.exam-active { transition: width 15s linear; width: 0%; }
+    
+    .meta-bar { display: flex; justify-content: space-between; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 0.5rem; }
+    .question-box { min-height: 120px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 1.3rem; line-height: 1.5; font-weight: 600; padding: 1rem; }
+
+    /* Form Fields */
+    textarea { width: 100%; height: 100px; background: #0b1120; border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 0.8rem; font-size: 1rem; resize: vertical; outline: none; margin-top: 1rem; }
+    textarea:focus { border-color: var(--accent); }
+
+    /* Solution Box */
+    .solution-box { margin-top: 1.5rem; padding: 1rem; border-radius: 8px; background: #0b1120; border-left: 4px solid var(--accent); }
+    .solution-box h4 { margin-bottom: 0.5rem; color: var(--accent); }
+
+    /* Exam Results List */
+    .result-list { max-height: 60vh; overflow-y: auto; display: flex; flex-direction: column; gap: 1rem; margin-top: 1.5rem; padding-right: 0.5rem; }
+    .result-item { background: #0b1120; padding: 1rem; border-radius: 8px; border: 1px solid var(--border); }
+    .result-item strong { color: var(--accent); }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <!-- START VIEW -->
+  <div id="view-start">
+    <h1>Regeltest Simulator</h1>
+    <p class="subtitle">Wähle deinen Modus zur gezielten Prüfungsvorbereitung</p>
+    
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="startExam()">Prüfung (15 Fragen, 15s)</button>
+      <button class="btn btn-outline" onclick="startTraining()">Trainingsmodus</button>
+    </div>
+    <div style="margin-top: 2rem; text-align: center;">
+      <small style="color: var(--text-muted);" id="srs-stats">Gespeicherte Fragen im Lernpool: ...</small><br>
+      <button class="btn-outline" style="margin-top: 0.5rem; padding: 4px 8px; font-size: 0.75rem; border-radius: 4px; cursor: pointer;" onclick="resetSrsProgress()">Lernstand zurücksetzen</button>
+    </div>
+  </div>
+
+  <!-- EXAM VIEW (Minimalistisch, nur Timer & Text) -->
+  <div id="view-exam" class="hidden">
+    <div class="meta-bar">
+      <span id="exam-counter">Frage 1 / 15</span>
+      <span id="exam-timer-num">15s</span>
+    </div>
+    <div class="timer-container">
+      <div id="exam-progress" class="timer-bar"></div>
+    </div>
+    <div class="question-box" id="exam-question-text">Fragentext lädt...</div>
+  </div>
+
+  <!-- EXAM RESULT VIEW -->
+  <div id="view-exam-result" class="hidden">
+    <h2>Prüfung beendet!</h2>
+    <p class="subtitle">Gleiche deinen Notizzettel mit den Musterlösungen ab:</p>
+    <div class="result-list" id="exam-result-list"></div>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="showStartView()">Zurück zum Hauptmenü</button>
+    </div>
+  </div>
+
+  <!-- TRAINING VIEW -->
+  <div id="view-training" class="hidden">
+    <div class="meta-bar">
+      <span>Trainingsmodus (Spaced Repetition)</span>
+      <span id="training-level-badge">Kasten 1</span>
+    </div>
+    <div class="question-box" id="training-question-text">Fragentext lädt...</div>
+    
+    <textarea id="training-input" placeholder="Schreibe deine Antwort hier hin..."></textarea>
+
+    <div class="btn-group" id="training-step-1">
+      <button class="btn btn-primary" onclick="checkTrainingAnswer()">Antwort prüfen</button>
+    </div>
+
+    <div id="training-solution-area" class="hidden">
+      <div class="solution-box">
+        <h4>Musterlösung:</h4>
+        <div id="training-solution-text"></div>
+      </div>
+      <p style="text-align: center; margin-top: 1rem; color: var(--text-muted);">Hast du die Frage richtig beantwortet?</p>
+      <div class="btn-group">
+        <button class="btn btn-danger" onclick="rateTraining(false)">Falsch / Unsicher</button>
+        <button class="btn btn-success" onclick="rateTraining(true)">Richtig gewusst</button>
+      </div>
+    </div>
+    
+    <div style="margin-top: 1.5rem; text-align: center;">
+      <button class="btn-outline" style="font-size: 0.8rem; padding: 4px 10px;" onclick="showStartView()">Training beenden</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  /* =========================================
+     1. FRAGENPOOL (Hier eigene Fragen einfügen)
+     ========================================= */
+const DEFAULT_QUESTIONS = [
+    // --- BLOCK K (Ältestes Heft / IDs 1-15) ---
+    { id: 1, q: "Ein vom Torwart ausgeführter Abstoß misslingt. Um zu verhindern, dass nun der gegnerische Stürmer in Ballbesitz gelangt und frei vor dem Tor stehend schießen kann, spielt der Torhüter den Ball ein zweites Mal. Der Schiedsrichter entscheidet auf indirekten Freistoß und verwarnt den Torwart, da sich noch ein Abwehrspieler auf der Torlinie befand. Handelt er richtig in Bezug auf die Persönliche Strafe?", a: "Nein, Feldverweis (Rote Karte). Da der Torhüter aus dem Tor heraus war und ein Feldspieler auf der Torlinie den Ball nicht mit den Händen abwehren darf, ist die Möglichkeit, ein Tor zu verhindern, wesentlich geringer. Es lag eine klare Torchance vor, die durch die Doppelberührung verhindert wurde, weshalb zwingend „Rot“ fällig gewesen wäre." },
+    { id: 2, q: "In einem Kreispokalspiel wird der Spieler mit der Nr. 5 der Gastmannschaft in der 72. Minute wegen eines Haltevergehens verwarnt. In der Verlängerung verzögert er auf unsportliche Weise die Spielfortsetzung. Der Schiedsrichter gibt ihm erneut „Gelb“, stellt ihn aber nicht mit „Gelb/Rot“ vom Feld, da man sich in der Verlängerung befindet. Handelt er richtig?", a: "Nein, zwingend „Gelb/Rot“. Verwarnungen aus der regulären Spielzeit verfallen lediglich zu Beginn eines Elfmeterschießens, bleiben jedoch für die gesamte Verlängerung vollumfänglich gültig." },
+    { id: 3, q: "Ein Spieler meldet sich während des laufenden Spiels wegen einer Behandlung beim Schiedsrichter ab. Auf dem Weg vom Spielfeld in Richtung Seitenlinie passiert ihn ein Gegenspieler, der den Ball führt. Jetzt läuft er zum Ball und spielt diesen erneut. Wie verhält sich der Unparteiische?", a: "Direkter Freistoß und Verwarnung (Gelbe Karte). Da sich der Spieler bereits abgemeldet hatte, gilt er als nicht mehr spielberechtigt/zum Spiel gehörig. Das Eingreifen in das Spielgeschehen ist unsportlich und wird mit einer Verwarnung und einem direkten Freistoß an der Stelle des Spieleingriffs geahndet." },
+    { id: 4, q: "Der Torhüter weigert sich, bei einer Strafstoßausführung ins Tor zu gehen. Der Schiedsrichter verwarnt ihn deshalb. Als er sich der wiederholten Aufforderung, ins Tor zu gehen, erneut widersetzt, stellt ihn der Schiedsrichter mit „Gelb/Rot“ vom Platz. Handelt er richtig?", a: "Nein. Weigert sich der Torwart nach der Verwarnung weiterhin, muss der Schiedsrichter den Spielführer einschalten und eine Karenzzeit setzen. Findet sich kein anderer Spieler, der die Torwartposition einnimmt, muss das Spiel abgebrochen werden." },
+    { id: 5, q: "In der Nachspielzeit läuft der letzte Angriff. Der neutrale Schiedsrichter-Assistent signalisiert Abseits. Der Schiedsrichter übersieht dies aber und beendet kurz darauf, nachdem die Mannschaft das 2:1 erzielt hat, das Spiel. Erst unmittelbar nach dem Schlusspfiff wird er von seinem Assistenten auf die strafbare Abseitsstellung aufmerksam gemacht. Entscheidung?", a: "Kein Tor, Spielende. Solange das Schiedsrichterteam das Spielfeld nach dem Schlusspfiff noch nicht verlassen hat, darf der Schiedsrichter eine Tatsachenentscheidung nach Rücksprache mit seinem Assistenten revidieren. Da die Nachspielzeit abgelaufen war, erfolgt keine weitere Spielfortsetzung mehr." },
+    { id: 6, q: "Bei einem Strafstoß läuft ein Angreifer vor dem Schuss zu früh in den Strafraum. Der Ball prallt vom Pfosten ins Feld zurück und rollt parallel zur Torlinie Richtung Eckfahne. Dort nimmt ihn kurz vor Verlassen des Strafraums der zu früh in den Strafraum gelaufene Stürmer an und spielt ihn zu einem seiner Mitspieler. Wie entscheidet der Schiedsrichter?", a: "Weiterspielen. Der Angreifer war zwar zu früh in den Strafraum gelaufen, da er durch das Annehmen an der Eckfahne jedoch weder eine direkte Torchance kreiert noch den Gegner behindert hat, ist sein Verhalten regeltechnisch nicht zu beanstanden." },
+    { id: 7, q: "Im Strafraum nimmt ein Angreifer einen hohen Flankenball mit dem Fuß an und schießt ihn aufs Tor. Auf der Torlinie wehrt ein Verteidiger den Ball mit den Händen ab (über Kopfhöhe, torwartähnlich) und verhindert ein sicheres Tor. Der Schiri entscheidet auf Strafstoß und „Rot“. Jetzt weist ihn sein neutraler Assistent darauf hin, dass der Ball bei der Ballannahme des Stürmers zuvor gegen dessen unabsichtlich angelegten Arm geprallt war. Wie lautet die Entscheidung?", a: "Strafstoß, Verwarnung (Gelbe Karte) für den Verteidiger. Da unmittelbar nach einer Handberührung kein reguläres Tor erzielt werden kann, lag rechtlich keine offensichtliche Torchance vor. Daher bleibt der Strafstoß wegen des Handspiels bestehen, die Rote Karte wird jedoch auf Gelb reduziert." },
+    { id: 8, q: "Einwurf für die Heimmannschaft. Der einwerfende Spieler wirft den Ball entlang der Seitenlinie, ohne dass dieser dabei ins Spielfeld gelangt. Gleichzeitig hat der Spieler aber deutlich beim Einwurf seinen Fuß gehoben. Entscheidung des Schiris?", a: "Einwurf für die gegnerische Mannschaft. Da ein technischer Fehler bei der Wurfausführung (Fuß gehoben) vorliegt, ist dies das vorrangige Vergehen, womit der Einwurf an die gegnerische Mannschaft übergeht." },
+    { id: 9, q: "Ein verletzter Spieler läuft nach einer Behandlung ohne Zustimmung des Schiedsrichters zurück auf das Spielfeld. Ohne dass er unmittelbar eingreift, erzielt seine Mannschaft kurz darauf ein Tor. Wie entscheidet der Referee?", a: "Tor, Anstoß, Verwarnung (Gelbe Karte) für den Spieler. Das unerlaubte Betreten ist zwar eine Unsportlichkeit, hatte jedoch keinen aktiven Einfluss auf die Erzielung des Treffers. Daher zählt das Tor und der Spieler wird nachträglich verwarnt." },
+    { id: 10, q: "Der Trainer der Gastmannschaft wird in der 40. Minute mittels Roter Karte aus dem Innenraum verwiesen und verlässt diesen auch. In der Halbzeitpause sieht der Schiedsrichter, dass der Trainer in die Kabine des Teams geht. Muss er dies verhindern?", a: "Nein. Ein des Feldes verwiesener Teamoffizieller muss lediglich den Innenraum verlassen. Ein Aufenthalt in den Umkleidekabinen während der Halbzeitpause ist regelseitig nicht untersagt und vom Schiedsrichter nicht zu überwachen." },
+    { id: 11, q: "Ein Angreifer befindet sich knapp hinter der Mittellinie in einer Abseitsposition. Als ein Mitspieler einen langen Pass auf ihn spielt, wird der Ball von einem Verteidiger auf Höhe der Mittellinie mit einem absichtlichen Handspiel abgefangen. Wie entscheidet der Schiedsrichter?", a: "Direkter Freistoß, keine Persönliche Strafe. Da der angespielte Stürmer im Abseits stand, lag weder ein aussichtsreicher Angriff noch eine offensichtliche Torchance vor, die durch das Handspiel regelwidrig unterbunden werden konnte." },
+    { id: 12, q: "Der Abwehrspieler verkürzt beim Eckstoß den 9,15-Meter-Abstand. Als der Eckstoß ausgeführt wird, erreicht der Abwehrspieler deshalb den Ball und schießt diesen ins Seitenaus. Wie entscheidet der Schiri?", a: "Wiederholung des Eckstoßes und Verwarnung (Gelbe Karte) für den Abwehrspieler wegen Missachtung des vorgeschriebenen Abstands." },
+    { id: 13, q: "Der Ball wird bei einem Einwurf von einem gegnerischen Spieler, der zuvor den Abstand auf weniger als zwei Meter verkürzt hat, aufgehalten. Wie muss der Unparteiische darauf reagieren?", a: "Indirekter Freistoß für das einwerfende Team und Verwarnung (Gelbe Karte) für den Gegenspieler. Beim Einwurf ist dies die regelseitige Ausnahme, bei der die Abstandsverkürzung nicht zur Wiederholung, sondern zu einem indirekten Freistoß führt." },
+    { id: 14, q: "Zwecks Behandlung begibt sich ein Abwehrspieler direkt neben der Eckfahne zur Außenlinie. Während diese erfolgt, steht er mit einem Bein im Spielfeld, mit dem anderen Bein außerhalb. Nun bekommt, circa 20 Meter vor dem Tor, ein Stürmers des Gegners den Ball von seinem Mitspieler zugespielt. Er hat nur noch den Torwart des verletzten Abwehrspielers unmittelbar vor sich. Entscheidung?", a: "Weiterspielen, kein Abseits. Befindet sich ein Abwehrspieler teils im und teils außerhalb des Spielfelds, wird diese unklare Situation zu seinen Ungunsten ausgelegt: Er gilt als auf der Begrenzungslinie stehend und hebt somit das Abseits auf." },
+    { id: 15, q: "Ein Stürmer wird im Bereich der Mittellinie von einem Physiotherapeuten behandelt. Dabei steht er mit einem Bein im Spielfeld, mit dem anderen außerhalb. Als der Ball in seine Nähe kommt, läuft er zum Ball und spielt diesen einem Mitspieler zu. Muss der Schiedsrichter eingreifen?", a: "Ja, direkter Freistoß für den Gegner und Verwarnung (Gelbe Karte) für den Stürmer. Auch hier wird die unklare Positionierung zu Lasten des Spielers ausgelegt: Er gilt als von außerhalb kommend und greift unangemeldet unerlaubt ins laufende Spiel ein." },
+
+    // --- BLOCK J (IDs 16-30) ---
+    { id: 16, q: "Nachdem der Spieler mit der Nr. 9 der Gastmannschaft im gegnerischen Strafraum durch ein Beinstellen zu Fall brought wurde, hat der Schiedsrichter auf Strafstoß entschieden. Der Spieler mit der Nr. 9 wurde auf dem Spielfeld behandelt und möchte im Anschluss an die Behandlung den Strafstoß selbst ausführen. Der Schiedsrichter verweigert ihm dies mit dem Hinweis, dass er aufgrund der Behandlung den Platz verlassen muss. Handelt er richtig?", a: "Nein. Hier greift die regelseitige Ausnahme, dass ein Spieler, der gefoult wurde und zur Ausführung des Strafstoßes bestimmt ist, nach der Behandlung nicht den Platz verlassen muss, sondern auf dem Feld bleiben und den Strafstoß ausführen darf." },
+    { id: 17, q: "Einen schwach geschossenen Strafstoß wehrt der Torhüter korrekt nach vorne zu einem Mitspieler des Schützen ab, der den Ball zum Torerfolg verwandeln kann. Weil dieser Spieler aber vor der Ausführung deutlich zu früh in den Strafraum eingedrungen war, erkennt der Schiri den Treffer nicht an. Wie und wo ist das Spiel fortzusetzen?", a: "Indirekter Freistoß für die verteidigende Mannschaft dort, wo der zu früh eingelaufene Mitspieler ins Spiel eingreift bzw. den Ball spielt." },
+    { id: 18, q: "Ein Spieler wechselt während des laufenden Spiels auf eigene Veranlassung seine Schuhe auf dem Spielfeld. Der Schiedsrichter greift nicht ein. Handelt er richtig und wenn ja, welche Verpflichtung hat der Spieler?", a: "Ja, der Schiedsrichter handelt richtig. Der Spieler darf seine Schuhe auf dem Spielfeld wechseln, muss sie jedoch in der nächsten Spielunterbrechung unaufgefordert dem Schiedsrichter zwecks Kontrolle vorzeigen." },
+    { id: 19, q: "Der Torhüter steht im Torraum neben seinem Torpfosten und will sich den zuvor verlorenen Schienbeinschoner wieder in die Stutzen schieben. Als ein Ball auf das Tor fliegt, streckt der Torhüter den Schienbeinschoner Richtung Ball, um diesen zu erreichen, und lenkt damit den Ball, der ansonsten ins Tor gegangen wäre, ins Toraus. Wie entscheidet der Schiedsrichter?", a: "Strafstoß; Feldverweis (Rote Karte). Das Berühren des Balles mit einem in der Hand gehaltenen Gegenstand gilt als Vergehen mit der Hand. Da hierdurch mit einem unzulässigen Mittel ein klares Tor verhindert wurde (DOGSO), ist auf Strafstoß und Feldverweis zu entscheiden." },
+    { id: 20, q: "Ein im Torraum im Abseits stehender Spieler lässt den Ball passieren, indem er die Beine öffnet, um so seinem weiter hinten stehenden Mitspieler, der nicht im Abseits steht, den Torschuss zu ermöglichen. Dadurch beeinträchtigt er einen Abwehrspieler, der zu spät kommt und den Ball ins eigene Tor lenkt. Der Torhüter wurde zu keiner Zeit behindert, weder in der Sicht noch durch die Aktion des im Abseits stehenden Spielers. Wie entscheidet der Schiedsrichter?", a: "Indirekter Freistoß wegen Abseits. Die Abseitsbeeinflussung bezieht sich nicht nur auf den Torhüter, sondern generell auf Gegenspieler. Da der Verteidiger durch die Aktion des im Abseits stehenden Spielers regelwidrig beeinträchtigt wurde, ist auf Abseits zu entscheiden." },
+    { id: 21, q: "Vor der Ausführung eines Freistoßes an der Mittellinie nahe der Seitenlinie stehen drei Auswechselspieler des Gastvereins in der Coachingzone zum Einwechseln bereit. Der Schiedsrichter hört aus diesem Bereich deutlich eine Beleidigung in seine Richtung, jedoch kann er diese nicht einem der drei Spieler zweifelsfrei zuordnen. Er fragt den danebenstehenden Trainer, der jedoch die Aussage verweigert. Der Schiedsrichter schließt darauf den Trainer mittels Roter Karte aus. Handelt er richtig?", a: "Ja. Im Bereich der Coaching-Zone ist der höchstrangige Trainer für das Verhalten der Personen auf der Bank verantwortlich und trägt die disziplinarischen Konsequenzen, sofern der Einzeltäter durch den Schiedsrichter nicht ermittelt werden kann." },
+    { id: 22, q: "Ein Auswechselspieler des Heimvereins versetzt einem gegnerischen Spieler, der nach einer Behandlung auf seinen Wiedereintritt wartet, einen heftigen Tritt. Der Schiedsrichter unterbricht das Spiel. Welche Strafen muss er nun aussprechen?", a: "Direkter Freistoß an der Stelle auf der Seitenlinie, die dem Vergehen am nächsten ist; Feldverweis (Rote Karte) wegen einer Tätlichkeit für den Auswechselspieler." },
+    { id: 23, q: "Ein Angreifer verlässt das Spielfeld über die Torlinie, um sich der Abseitsposition zu entziehen. Als der Ball von einem Verteidiger unter kontrollierten Bedingungen zu einem Mitspieler gespielt wird, läuft der Angreifer wieder auf das Spielfeld und spielt den Ball mit dem Fuß. Wie entscheidet der Schiedsrichter?", a: "Direkter Freistoß für die gegnerische Mannschaft dort, wo der Spieler den Ball gespielt hat; Verwarnung (Gelbe Karte) für den Angreifer. Der Spieler greift unerlaubt und damit unsportlich ins Spiel ein. Ein Abseits liegt aufgrund des kontrollierten Spiels des Verteidigers nicht vor." },
+    { id: 24, q: "Vor der Ausführung eines Strafstoßes ist ein Angreifer im Rücken des Schiedsrichters vor den Ball gelaufen (also näher als 11 Meter zur Torlinie), allerdings befindet er sich noch außerhalb des Strafraums. Der Torhüter wehrt den Ball seitlich ab und dieser gelangt zu dem Spieler, der nun direkt aufs Tor schießen will. Der Schiedsrichter-Assistent hat den Vorgang gesehen und hebt die Fahne. Wie entscheidet der Schiedsrichter?", a: "Indirekter Freistoß wegen Abseits. Der Spieler stand im Moment der Strafstoßausführung vor dem Ball und damit in einer Abseitsposition. Sobald er aktiv in das Spiel eingreift, wird diese Abseitsposition strafbar." },
+    { id: 25, q: "Freistoß für die verteidigende Mannschaft im eigenen Strafraum. Der Torhüter trifft den Ball nicht richtig, dennoch bewegt sich dieser circa fünf Meter nach vorne. Als der Keeper sieht, dass ein Angreifer in seine Richtung läuft und den Ball erreichen und ins leere Tor schießen könnte, schießt der Torhüter den Ball mit dem Fuß weg. Wie entscheidet der Schiedsrichter?", a: "Indirekter Freistoß für die Angreifer; Feldverweis (Rote Karte) für den Torhüter. Da der Ball bereits im Spiel war, liegt eine verbotene Doppelberührung nach einer Spielfortsetzung vor. Durch das Wegschlagen verhindert der Torhüter eine offensichtliche Torchance (DOGSO), was zwingend mit Rot geahndet wird." },
+    { id: 26, q: "Nach einem rücksichtslosen Tritt entscheidet der Schiedsrichter auf Vorteil, da die Mannschaft in Ballbesitz bleibt und einen aussichtsreichen Angriff bis zum Torabschluss fortsetzen kann. Wie entscheidet der Schiedsrichter nach der nächsten Spielunterbrechung bezüglich der Persönlichen Strafe?", a: "Verwarnung (Gelbe Karte). Diese wird trotz der Vorteilsgewährung nachgeholt, da es sich um ein rücksichtsloses Foulspiel handelte, bei dem keine Reduzierung der persönlichen Strafe zur Anwendung kommt." },
+    { id: 27, q: "Ein Angreifer läuft mit dem Ball allein in Richtung gegnerisches Tor und hat nur noch den Torhüter vor sich. Ein Verteidiger hält diesen Angreifer etwa zehn Meter außerhalb des Strafraums am Trikot fest. Es gelingt dem Stürmer sich loszureißen, der Schiedsrichter entscheidet auf Vorteil. Nachdem der Angreifer sein Dribbling ca. 15 Meter lang fortgesetzt hat, schießt er den Ball neben das Tor. Wie ist nun zu entscheiden?", a: "Abstoß; Verwarnung (Gelbe Karte) für den Verteidiger. Aufgrund der Vorteilsgewährung und des anschließenden Torabschlusses liegt keine Verhinderung einer klaren Torchance mehr vor, sodass die persönliche Strafe von Rot auf Gelb reduziert wird." },
+    { id: 28, q: "Freistoß für die Angreifer am Strafraum-Teilkreis. Nach dem Stellen der Mauer mit drei Verteidigern gibt der Schiedsrichter den Ball mit Pfiff frei. Unmittelbar bevor der Schütze den Ball trifft, läuft ein Angreifer näher als einen Meter zu den Verteidigern in der Mauer. Der Ball wird über das Tor geschossen. Wie entscheidet der Schiedsrichter?", a: "Indirekter Freistoß für die verteidigende Mannschaft an der Stelle, an der die Abstandsverletzung stattfand. Wenn drei oder mehr Verteidiger eine Mauer bilden, müssen Angreifer mindestens 1 Meter Abstand einhalten. Ein Verstoß wird mit einem indirekten Freistoß geahndet." },
+    { id: 29, q: "Ein Angreifer spielt den Ball flach zu einem 20 Meter entfernten Mitspieler, der aber im Abseits steht. Etwa fünf Meter vor diesem steht ein Verteidiger, der den Ball unbedrängt stoppen will. Dies misslingt ihm jedoch, und der Ball springt vom Fuß des Verteidigers zum abseits stehenden Angreifer. Wie entscheidet der Schiedsrichter?", a: "Weiterspielen, kein Abseits. Es liegt ein Spielen unter kontrollierten Bedingungen (Deliberate Play) durch den Verteidiger vor. Dass ihm die Ballannahme misslingt („bad play“), hebt den kontrollierten Charakter des Spielversuchs nicht auf, wodurch die Abseitsposition nicht strafbar wird." },
+    { id: 30, q: "Der Schiedsrichter hat wegen eines rücksichtslosen Fouls das Spiel im Mittelfeld unterbrochen und will den schuldigen Spieler verwarnen. Dieser hat sich aber bei der Aktion so schwer verletzt, dass er auf einer Trage vom Spielfeld gebracht werden muss. Wie muss sich der Schiedsrichter jetzt verhalten?", a: "Der Schiedsrichter zeigt einem auf der Trage liegenden Spieler keine Signalkarte. Er spricht den Spielführer an, informiert ihn über die Verwarnung und macht für alle Beteiligten unmissverständlich deutlich, dass diese gegen den verletzten Spieler ausgesprochen wurde. Spielfortsetzung bleibt der direkte Freistoß." },
+
+    // --- BLOCK I (IDs 31-45) ---
+    { id: 31, q: "Der Spielertrainer wird in der 35. Minute als Teamoffizieller wegen Kritik verwarnt. Nach seiner Einwechslung in der Halbzeit bringt er in der 60. Minute einen Gegner durch einen rücksichtslosen Tritt zu Fall. Wie entscheidet der Schiedsrichter bezüglich der Disziplinarmaßnahme?", a: "Gelb/Rote Karte. Die Verwarnung als Teamoffizieller ist zu berücksichtigen und führt in der Addition mit dem rücksichtslosen Foulspiel zu einer Gelb/Roten Karte." },
+    { id: 32, q: "Freistoß für die Verteidiger im Torraum. Der Torhüter trifft den Ball nur leicht, dennoch bewegt er sich ca. 1 Meter. Als der Keeper sieht, dass ein Angreifer in seine Richtung läuft, schießt er den Ball mit dem Fuß weg und verhindert so, dass der Angreifer den Ball ins leere Tor schießen kann. Entscheidungen?", a: "Indirekter Freistoß, Feldverweis (Rote Karte). Bei jeder Spielfortsetzung ist eine Doppelberührung mit einer Persönlichen Strafe zu ahnden, wenn dadurch eine offensichtliche Torchance oder ein aussichtsreicher Angriff verhindert wird." },
+    { id: 33, q: "Ein Angreifer des Gastvereins schießt vom Strafraum-Teilkreis den Ball Richtung leeres Tor. Ein Teamoffizieller des Heimvereins betritt neben dem Tor das Spielfeld und will den Ball wegschießen. Er berührt jedoch den Ball nur, und dieser rollt trotzdem ins Tor. Welche Entscheidungen sind zu treffen?", a: "Tor, Anstoß, Feldverweis des Teamoffiziellen mittels Roter Karte. Wenn der Ball auch ohne diesen äußeren Einfluss ins Tor gegangen wäre, ist das Tor gültig." },
+    { id: 34, q: "Ein Angreifer läuft mit dem Ball am Fuß Richtung gegnerisches Tor und will den Ball über den Verteidiger heben. Dieser führt seinen Arm absichtlich nach oben in die Flugbahn des Balles und schlägt den Ball etwa auf Höhe des Elfmeterpunktes mit der Hand über dem Kopf weg, wodurch eine offensichtliche Torchance verhindert wird. Entscheidungen?", a: "Strafstoß, Rote Karte. Dies ist das Verhindern einer offensichtlichen Torchance (DOGSO) durch ein absichtliches Handspiel. Eine Reduzierung auf Gelb findet nicht statt, da der Verteidiger mit einer torhütertypischen, absichtlichen Handbewegung agiert hat." },
+    { id: 35, q: "Pokalspiel: Ein Spieler, der während des Spiels wegen Kritik verwarnt worden ist, tritt beim Elfmeterschießen an, stoppt unmittelbar vor dem Schuss („unzulässiges Täuschen“) und erzielt in weiterer Folge einen Treffer. Wie ist zu entscheiden?", a: "Der Elfmeter gilt als verschossen, Verwarnung (Gelbe Karte) für den Schützen. Durch das unzulässige Täuschen bei der Ausführung ist der Strafstoß verwirkt. Er erhält hierfür Gelb, jedoch keine Gelb/Rote Karte, da Verwarnungen aus der regulären Spielzeit nicht in das Elfmeterschießen übernommen werden." },
+    { id: 36, q: "Ein Verteidiger rutscht im Strafraum aus, wobei er sich mit dem linken Arm senkrecht am Boden abstützt. Dabei springt ihm der vom Angreifer Richtung Tor geschossene Ball an diesen Unterarm, wodurch ein Tor verhindert wird. Entscheidung?", a: "Weiterspielen. Es handelt sich um kein strafbares Handspiel. Das Abfangen des Körpers mit dem Arm bei einem Sturz stellt eine natürliche Körperbewegung dar." },
+    { id: 37, q: "Ein Angreifer steht im gegnerischen Strafraum und schlägt den Ball mit der Hand etwa auf Kopfhöhe Richtung Tor. Der Ball fliegt jedoch neben dem Tor über die Torlinie. Welche Persönliche Strafe muss der Unparteiische aussprechen, bevor er das Spiel mit direktem Freistoß fortsetzen lässt?", a: "Verwarnung (Gelbe Karte) des Angreifers wegen unsportlichen Handspiels, da er versucht hat, durch das Handspiel ein Tor zu erzielen bzw. den Schiedsrichter zu täuschen." },
+    { id: 38, q: "Der Torhüter hat im Torraum den Ball gefangen und wirft diesen einem außerhalb des Spielfeldes neben dem Tor stehenden Gegenspieler heftig an den Körper. Der Schiri unterbricht und schließt den Torhüter aus. Wie wird das Spiel fortgesetzt?", a: "Strafstoß. Der Kontakt fand zwar außerhalb des Spielfeldes statt, aber auf Höhe der Strafraumgrenzen. Vergehen außerhalb des Feldes auf Höhe des eigenen Strafraums werden spielfortsetzungstechnisch mit einem Strafstoß geahndet." },
+    { id: 39, q: "Ein Angreifer verlässt das Spielfeld über die Torlinie, um sich der Abseitsposition zu entziehen. Als ein Verteidiger im Strafraum den Ball kontrolliert in seine Richtung spielt, läuft der Angreifer auf das Spielfeld und spielt den Ball mit dem Fuß. Entscheidungen?", a: "Direkter Freistoß für den Gegner, Verwarnung (Gelbe Karte) für den Angreifer wegen unerlaubten Wiederbetretens des Spielfelds. Die Abseitsposition lebte durch das kontrollierte Spiel des Verteidigers nicht auf, jedoch ist das Betreten ohne Erlaubnis mit anschließendem Spieleingriff strafbar." },
+    { id: 40, q: "Einwurf: Ein Verteidiger wirft den Ball korrekt Richtung eigenen Strafraum. Der Torhüter kann den Ball gerade noch vor der Torlinie mit den Händen über die Torlatte wegschlagen und so ein Tor verhindern. Wie muss der Referee entscheiden?", a: "Indirekter Freistoß auf der Torraumlinie parallel zur Torlinie, keine Persönliche Strafe. Berührt der Torwart den Ball im eigenen Strafraum unerlaubt mit der Hand nach einem Zuspiel/Einwurf, ist dies rein technisch; es gibt dafür keine persönliche Strafe, selbst wenn dadurch ein Tor verhindert wird." },
+    { id: 41, q: "Strafstoß: Der Schütze stoppt unmittelbar vor dem Schuss („unzulässiges Täuschen“), der Torhüter bewegt sich auch vorzeitig nach vorne (kein Fuß mehr auf oder über der Torlinie) und kann den geschossenen Ball abwehren. Wie entscheidet der Schiedsrichter?", a: "Indirekter Freistoß und Verwarnung für den Schützen. Da das unzulässige Täuschen mit einer persönlichen Strafe (Gelb) bedroht ist, gilt es als höherwertiges Vergehen gegenüber dem reinen Vorwärtsbewegen des Keepers und bestimmt die Spielfortsetzung." },
+    { id: 42, q: "Vor der Ausführung eines Freistoßes an der Mittellinie nahe der Seitenlinie stehen drei Einwechselspieler des Gastvereins in deren Coaching-Zone. Der Unparteiische hört aus diesem Bereich deutlich eine Beleidigung, kann diese jedoch nicht zuordnen. Er schließt nach ergebnisloser Befragung des Trainers diesen aus. Ist dies korrekt?", a: "Ja, Feldverweis (Rote Karte) für den Trainer. Die Auswechselspieler befanden sich im Bereich der Coaching-Zone. Kann der Schiedsrichter den genauen Täter dort nicht ermitteln, wird der höchstrangige anwesende Trainer stellvertretend sanktioniert." },
+    { id: 43, q: "Strafstoß: Der Schütze spielt den Ball kurz nach rechts vorne ab. Ein Mitspieler des Schützen war zu früh in den Strafraum-Teilkreis eingedrungen und kann den Ball ins Tor schießen. Entscheidung?", a: "Indirekter Freistoß für die verteidigende Mannschaft. Da der Strafstoß nach vorne gespielt und somit zunächst korrekt ausgeführt wurde, gibt es keine Wiederholung. Durch das Eingreifen des zu früh eingelaufenen Mitspielers in einer tororientierten Szene wird auf indirekten Freistoß entschieden." },
+    { id: 44, q: "Ein Verteidiger ist über einen Mitspieler verärgert. Er wirft im Strafraum-Teilkreis stehend einen Erdklumpen nach diesem und trifft ihn im Bereich des Elfmeterpunktes. Der Unparteiische sieht dies, unterbricht das Spiel und schließt den Spieler aus. Wie wird das Spiel fortgesetzt?", a: "Strafstoß. Bei Vergehen durch Wurfgeschosse ist der Ort maßgebend, an dem die Person getroffen wurde. Da der Treffer im Strafraum erfolgte und Vergehen gegen Mitspieler nunmehr gleichgestellt sind, ist auf Strafstoß zu entscheiden." },
+    { id: 45, q: "Ein Angreifer läuft mit dem Ball allein in Richtung gegnerisches Tor. Der mitlaufende Verteidiger drückt sich mit der Schulter gegen den Angreifer und bringt ihn dann im Strafraum bei diesem Zweikampf um den Ball durch Beinstellen zu Fall. Entscheidung?", a: "Strafstoß, Verwarnung (Gelbe Karte) für den Verteidiger. Es liegt zwar eine Vereitelung einer offensichtlichen Torchance (DOGSO) vor, da das Vergehen jedoch bei einem Zweikampf um den Ball im Strafraum geschieht, wird die persönliche Strafe von Rot auf Gelb reduziert." },
+
+    // --- BLOCK H (IDs 46-60) ---
+    { id: 46, q: "Vor einem Kreisligaspiel bittet der Heimverein den Schiedsrichter, umstrittene Entscheidungen mit Begründung per Lautsprecher-Durchsage auf dem Sportplatz bekanntzugeben, um so dem „Public Announcement“ Rechnung zu tragen. Soll der Schiedsrichter diesem Wunsch entsprechen?", a: "Nein. „Public Announcement“ ist nur dort vorgesehen, wo ein Video-Assistent (VAR) zum Einsatz kommt bzw. wo dies von den Ausführungsbestimmungen des jeweiligen Wettbewerbs ausdrücklich geregelt ist. Dies trifft in Deutschland nur auf die Profiligen zu." },
+    { id: 47, q: "In welcher Reihenfolge und warum wird a) die Erklärung des Vorfalls und b) die finale Entscheidung beim „Public Announcement“ bekannt gegeben?", a: "Reihenfolge: Erst a) Erklärung des Vorfalls, dann b) finale Entscheidung. Grund waren Erkenntnisse aus Pilotprojekten, da ansonsten die Erklärung im einsetzenden Jubel bzw. im Lärm der Zuschauer untergehen würde." },
+    { id: 48, q: "Darf ein Team, außer wenn dieser ausgewechselt wird, den Ansprechpartner für den Kapitänsdialog tauschen?", a: "Ja. Die Mannschaft kann jederzeit den Ansprechpartner für den Schiri ändern. Dies kann beispielsweise sinnvoll sein, wenn ein Spieler, der Ansprechpartner ist, persönlich so aufgebracht ist, dass ein respektvolles Miteinander nicht mehr gewährleistet ist." },
+    { id: 49, q: "Ein Akteur der Heimmannschaft spielt einen Pass, der von einem Spieler der Gastmannschaft abgefälscht wird. Nachdem danach der Ball versehentlich vom Schiedsrichter aufgehalten wird, gelangt er in den Ballbesitz der Gastmannschaft. Wie und wo ist das Spiel fortzusetzen?", a: "Schiedsrichterball mit einem Akteur der Heimmannschaft an der Stelle, an der sich der Ball zum Zeitpunkt der Unterbrechung befand. Entscheidend ist das Team, das in Ballbesitz geblieben oder gekommen wäre (bei Nähe zum Passgeber die Heimmannschaft). Die Spielfortsetzung erfolgt am Ort der Unterbrechung." },
+    { id: 50, q: "Der Torhüter hat einen Flankenball abgefangen und wirft den Ball aus dem Strafraum heraus zu einem Mitspieler an der Seitenauslinie. Noch bevor dieser an den Ball kommen kann, erkennt der Schiedsrichter zwei verletzte Spieler im Strafraum und unterbricht das Spiel. Wie und wo wird das Spiel fortgesetzt?", a: "Schiedsrichterball mit dem angespielten Team an der Stelle, an der sich der Ball zum Zeitpunkt der Unterbrechung befand." },
+    { id: 51, q: "Ein Auswechselspieler, der sich neben dem eigenen Tor warmmacht, hält einen Ball, der ansonsten ins Toraus gerollt wäre, etwa einen halben Meter im Spielfeld innerhalb des Strafraums mit dem Fuß auf, da er sich irrtümlicherweise ins Spielfeld bewegt hat. Der Schiedsrichter unterbricht daraufhin das Spiel. Wie hat er zu entscheiden?", a: "Indirekter Freistoß. Da es sich hierbei um ein Versehen und keine unfaire Absicht handelte und der Ball das Feld eindeutig verlassen hätte, wird das Spiel mit einem indirekten Freistoß ohne persönliche Strafe fortgesetzt." },
+    { id: 52, q: "Der Trainer der Gastmannschaft steht innerhalb seiner Coachingzone. Als der Ball aus dem laufenden Spiel auf ihn zurollt und kein weiterer Spieler diesen erreichen kann, geht der Trainer dem Ball entgegen und hält diesen ohne unsportliche Absicht noch auf der Linie mit dem Fuß auf. Wie entscheidet der Schiedsrichter?", a: "Indirekter Freistoß; keine persönliche Strafe. Da der Ball das Spielfeld eindeutig verlassen hätte und keine unfaire Beeinflussung vorliegt, zieht dieses Vergehen nur einen indirekten Freistoß ohne persönliche Strafe nach sich." },
+    { id: 53, q: "Ein verletzter Spieler, der außerhalb des Spielfeldes behandelt wurde, läuft unangemeldet auf das Feld und spielt den Ball, der sonst zu einem gegnerischen Spieler gelangt wäre, welcher einen verheißungsvollen Angriff hätte einleiten können. Wie entscheidet der Schiedsrichter?", a: "Direkter Freistoß; Gelb; Gelb/Rot. Für das unerlaubte Betreten des Spielfelds erhält er die Gelbe Karte; für das Unterbinden des aussichtsreichen Angriffs (SPA) folgt die zweite Verwarnung und somit der Feldverweis mit Gelb/Rot." },
+    { id: 54, q: "Der Torhüter fängt den Ball. Während er diesen in den Händen hält, befindet sich ein Mitspieler in der gegnerischen Hälfte in einer Abseitsposition. Als der Mitspieler ein paar Meter zurückgekommen ist und nicht mehr im Abseits steht, wirft der Torwart diesem Spieler den Ball zu. Wie entscheidet der Schiedsrichter?", a: "Kein Abseits; weiterspielen. Für die Abseitsbeurteilung ist beim Abwurf durch den Torwart nicht die Ausholbewegung, sondern der letzte Kontakt (der Moment, in dem der Ball die Hände verlässt) maßgebend." },
+    { id: 55, q: "Da der Torhüter den Ball sieben Sekunden kontrolliert in den Händen gehalten hat und erst dann abschlägt, unterbricht der Schiedsrichter das Spiel. Handelt er in dieser Situation korrekt?", a: "Nein. Nach den Regeln ist das Ballhalten durch den Torwart erst ab mehr als acht Sekunden strafbar." },
+    { id: 56, q: "Was versteht man regeltechnisch unter der Ballkontrolle durch den Torhüter? Nenne drei Möglichkeiten.", a: "1. Der Torhüter hält den Ball mit beiden Händen oder mit einer Hand/einem Arm gegen eine Oberfläche (z. B. den Boden oder den eigenen Körper). 2. Er hält den Ball in einer oder beiden ausgestreckten, offenen Händen. 3. Er prellt den Ball auf den Boden oder wirft ihn in die Luft." },
+    { id: 57, q: "Nachdem der Torhüter die zulässige Zeit mit dem Ball in der Hand (8 Sekunden) überschritten hat, gibt der Schiedsrichter einen indirekten Freistoß. Handelt er richtig? Wie und wo wird das Spiel fortgesetzt?", a: "Nein. Die Spielfortsetzung ist ein Eckstoß für das gegnerische Team. Der Eckstoß wird von der Seite ausgeführt, die der Position des Torhüters zum Zeitpunkt des Vergehens am nächsten liegt." },
+    { id: 58, q: "Bei der Strafstoß-Ausführung rutscht der Schütze mit dem Standbein weg und schießt sich selbst an. Dennoch fliegt der Ball ins Tor. Wie entscheidet der Referee?", a: "Wiederholung des Strafstoßes. Bei einer unabsichtlichen Doppelberührung des Schützen mit nachfolgendem Torerfolg wird der Strafstoß wiederholt." },
+    { id: 59, q: "Ein Torhüter, der den Ball sicher gefangen hat, wirft sich mit dem Ball in den Händen auf den Boden, begräbt den Ball unter sich und verweilt mehrere Sekunden. Ab wann beginnt die Zeitspanne von acht Sekunden?", a: "Die Zeit läuft ab dem Moment, in dem der Torhüter die Kontrolle über den Ball erlangt hat – unabhängig davon, ob er am Boden liegt, steht oder läuft." },
+    { id: 60, q: "Wie läuft der Vorgang des Runterzählens bei kontrolliertem Ballbesitz durch den Torhüter ab?", a: "Die ersten drei Sekunden zählt der Schiedsrichter im Geiste mit. Nach drei Sekunden hebt er die Hand als klares Signal für die letzten fünf Sekunden und zählt diese sichtbar mit den Fingern herunter. Ist die Zeit abgelaufen und der Ball nicht freigegeben, unterbricht der Schiedsrichter und verhängt einen Eckstoß für den Gegner." },
+
+    // --- BLOCK G (IDs 61-75) ---
+    { id: 61, q: "Eine Flanke aus dem Halbfeld wird in den Strafraum geschlagen. Noch bevor der Ball dort ankommt, reißt ein Verteidiger den gegnerischen Mittelstürmer mit beiden Armen zu Boden. Der Mittelstürmer stand im Moment der Ballabgabe jedoch in einer Abseitsposition. Wie entscheidet der Schiedsrichter?", a: "Strafstoß und Verwarnung (Gelbe Karte) gegen den Verteidiger. Die Abseitsstellung war im Moment des Haltens noch nicht strafbar, da der Stürmer noch nicht aktiv ins Spiel eingriff oder einen Zweikampf um den Ball führte. Daher ist das vorangegangene Haltevergehen zu ahnden." },
+    { id: 62, q: "Bei der Strafstoßausführung rutscht der Schütze aus und trifft den Ball unabsichtlich mit beiden Füßen. Der Ball prallt Richtung Tor und wird vom Torhüter pariert. Allerdings hatte sich der Torhüter bereits vor der Ausführung deutlich mit beiden Beinen vor die Torlinie bewegt. Wie entscheidet der Schiedsrichter?", a: "Wiederholung des Strafstoßes. Da zum Zeitpunkt der Ausführung gleichzeitige Vergehen beider Teams vorliegen und keines davon ein zwingend höherwertiges verwarnungswürdiges Vergehen (wie z. B. unsportliches Antäuschen) darstellt, wird auf Wiederholung entschieden." },
+    { id: 63, q: "In der 2. Halbzeit kontrolliert der Torhüter den Ball unbedrängt länger als 8 Sekunden in den Händen. Der Schiedsrichter verhängt folgerichtig einen Eckstoß gegen ihn. Kurz vor Spielende hält derselbe Torhüter den Ball erneut länger als 8 Sekunden fest. Ist beim zweiten Vergehen eine Verwarnung (Gelbe Karte) gerechtfertigt?", a: "Nein. Beim zweiten Vergehen wird der Torhüter eindringlich ermahnt und auf sein Fehlverhalten hingewiesen. Eine Verwarnung wegen wiederholten Verstoßes käme erst bei einer erneuten, dritten Zeitüberschreitung infrage." },
+    { id: 64, q: "In der 1. Halbzeit wird die gegnerische Mannschaft zweimal wegen Zeitüberschreitung des Torhüters (länger als 8 Sekunden Ballkontrolle) mit einem Eckstoß bestraft. In der Halbzeit wechselt das Team den Torwart aus. Kurz vor Abpfiff überschreitet der eingewechselte Torwart ebenfalls die 8 Sekunden. Wird er nun zusätzlich zum Eckstoß verwarnt?", a: "Nein. Disziplinarmaßnahmen und Verwarnungen betreffen stets das persönliche Fehlverhalten des einzelnen Spielers. Der neu eingewechselte Torhüter beginnt disziplinarisch unbelastet." },
+    { id: 65, q: "Bei einem Landesligaspiel ohne Video-Assistent oder Torlinientechnologie entscheidet der Schiedsrichter auf Strafstoß. Der neutrale Schiedsrichter-Assistent positioniert sich daraufhin an der Seitenlinie auf Höhe des Elfmeterpunkts anstatt am Schnittpunkt von Strafraum- und Torlinie. Handelt der Assistent richtig?", a: "Nein. Die Position an der Seitenlinie auf Höhe des Elfmeterpunkts ist ausschließlich Spielen mit GLT oder VAR-System vorbehalten. In allen anderen Spielklassen muss der Assistent am Schnittpunkt von Strafraum- und Torlinie verbleiben." },
+    { id: 66, q: "Nach einem Zweikampf im Strafraum lässt der Schiedsrichter weiterspielen. Aus Verärgerung darüber beleidigt der Ersatztorhüter des angreifenden Teams den Schiedsrichter lautstark von der Auswechselbank aus. Der Schiedsrichter unterbricht das laufende Spiel. Welche Entscheidungen sind zu treffen?", a: "Feldverweis (Rote Karte) für den Ersatztorwart und indirekter Freistoß auf der Seitenlinie auf Höhe des Vergehens. Da es sich um ein verbales Vergehen einer Person auf der Teamliste außerhalb des Feldes handelt, wird das Spiel mit indirektem Freistoß auf der Begrenzungslinie fortgesetzt." },
+    { id: 67, q: "Nach einem leichten Oberkörperkontakt im Strafraum pfeift der Schiedsrichter Strafstoß. Unmittelbar danach geht der vermeintlich gefoulte Stürmer zum Schiedsrichter und erklärt ehrlich, dass aus seiner Sicht kein Foul vorlag. Wie sollte der Schiedsrichter reagieren?", a: "Spielfortsetzung mit Schiedsrichterball am Ort der Unterbrechung (bzw. vor dem Verteidiger-Torwart im Strafraum). Da der Schiedsrichter seine Tatsachenentscheidung vor der Fortsetzung korrigieren darf und keine Simulation vorlag, erfolgt keine Bestrafung, sondern ein Schiedsrichterball sowie eine lobende Erwähnung im Spielbericht." },
+    { id: 68, q: "Ein Schuss von der Strafraumgrenze wird auf Höhe des Elfmeterpunkts von einem Verteidiger per Fuß reflexartig auf der Linie abgewehrt. Der Ball prallt zu einem Angreifer, der beim Torschuss in einer Abseitsposition stand und den Abpraller verwandelt. Entscheidung?", a: "Indirekter Freistoß wegen Abseits. Bei der Abwehraktion des Verteidigers handelt es sich um eine Torverhinderungsaktion (Save). Aus einer solchen Aktion wird eine Abseitsposition bei Ballkontakt nicht aufgehoben." },
+    { id: 69, q: "Fünf Minuten vor Spielende führt die Heimmannschaft knapp. Aus nächster Nähe ist deutliches Donnergrollen zu vernehmen und ein Gewitter zieht auf. Die Gäste fordern den Schutz der Akteure, das Heimteam will weiterspielen. Wie entscheidet der Schiedsrichter?", a: "Sofortige Spielunterbrechung und Beorderung beider Mannschaften in die Kabinen. Die körperliche Unversehrtheit aller Beteiligten steht über jedem sportlichen Interesse." },
+    { id: 70, q: "Ein Spieler liegt nach einem Zweikampf offensichtlich ernsthaft verletzt im Mittelkreis am Boden. Sein Team spielt den Ball in der eigenen Abwehrreihe weiter. Soll der Schiedsrichter warten, bis der Ball ins Aus gespielt wird, oder sofort eingreifen?", a: "Sofortige Spielunterbrechung durch den Schiedsrichter und Fortsetzung nach der Behandlung mit einem Schiedsrichterball. Bei dem Verdacht auf eine schwere Verletzung darf der Schiedsrichter nicht auf ein Fair-Play-Verhalten der Teams warten, sondern muss unverzüglich unterbrechen." },
+    { id: 71, q: "Ein Angreifer wird in der gegnerischen Hälfte taktisch am Trikot gehalten (SPA), reißt sich aber los, woraufhin der Referee auf Vorteil entscheidet. Wenige Meter weiter dringt der Stürmer in den Strafraum ein und wird dort durch ein ballorientiertes Beinstellen am klaren Torabschluss gehindert (DOGSO). Entscheidungen des Schiedsrichters?", a: "Strafstoß und Verwarnung (Gelbe Karte) für den Verteidiger. Das erste taktische Vergehen verliert durch den eingetretenen Vorteil seine Verwarnung. Die Vereitelung der klaren Torchance (DOGSO) im Strafraum wird aufgrund des ballorientierten Zweikampfs von Rot auf Gelb reduziert." },
+    { id: 72, q: "Bei Minustemperaturen möchte ein Feldspieler mit einer Zipfelmütze auflaufen, von der keine Gefahr ausgeht. Der Schiedsrichter untersagt ihm das, obwohl beide Torhüter Mützen tragen dürfen. Handelt der Schiedsrichter regelkonform?", a: "Ja. Torhütern ist eine Kopfbedeckung (Schildmütze/Kappe) als Blend- und Wetterschutz gestattet. Feldspieler dürfen Kopfbedeckungen nur nutzen, wenn sie eng anliegen, die Trikot- bzw. Basisfarbe haben und keine abstehenden Teile aufweisen; Zipfelmützen sind unzulässig." },
+    { id: 73, q: "Ist zur Ausführung eines Schiedsrichter-Balls stets ein Pfiff des Schiedsrichters vorgeschrieben?", a: "Nein, ein Pfiff ist beim Schiedsrichterball grundsätzlich nicht vorgeschrieben. Ein Pfiff ist nur dann obligatorisch, wenn das Spiel zuvor wegen einer persönlichen Strafe, einer Auswechslung, einer Behandlung auf dem Feld oder zur Abstandswiederherstellung unterbrochen war." },
+    { id: 74, q: "Fünf Minuten vor Spielbeginn pfeift der Schiedsrichter die Teams zur Platzkontrolle bzw. zum Einlaufen. Während das Heimteam bereitsteht, verzögern die Gäste das Erscheinen wiederholt grundlos um mehrere Minuten. Wie reagiert der Unparteiische?", a: "Der Schiedsrichter wartet bis zur offiziell geplanten Anstoßzeit. Kommt das Team verspätet aus der Kabine und verzögert sich der Anstoß dadurch, führt er das Spiel regulär durch und verfasst eine detaillierte Meldung über den Vorfall im Spielbericht." },
+    { id: 75, q: "Der Torhüter kontrolliert den Ball über 8 Sekunden mit den Händen. Der Schiedsrichter hat versäumt, die letzten 5 Sekunden mit erhobenem Arm sichtbar herunterzuzählen. Der neutrale Schiedsrichter-Assistent weist den Schiedsrichter nun auf die Zeitüberschreitung hin. Wie kann der Referee reagieren?", a: "Der Schiedsrichter entscheidet auf Eckstoß für das gegnerische Team. Das optische Herunterzählen der letzten fünf Sekunden ist ein unterstützendes Schiedsrichterzeichen, stellt jedoch keine zwingende Wirksamkeitsvoraussetzung für die Ahndung der objektiven Zeitüberschreitung dar." },
+
+    // --- BLOCK F (IDs 76-90) ---
+    { id: 76, q: "Aus Verärgerung darüber, dass der Schiedsrichter ein vermeintliches Vergehen nicht geahndet hat und weiterspielen lässt, kickt der Trainer ein Begrenzungshütchen, das an der Coachingzone steht, mehrere Meter weit ins Spielfeld und ins unmittelbare Spielgeschehen hinein. Daraufhin unterbricht der Schiedsrichter das Spiel. Wie entscheidet er jetzt?", a: "Direkter Freistoß am Ort des Eingriffs, Rote Karte für den Trainer." },
+    { id: 77, q: "Ein Trainer ist verärgert über die Strafstoßentscheidung des Schiedsrichters, nimmt eine Wasserflasche und wirft diese aus Verärgerung heftig gegen die Bande. Wie reagiert der Schiedsrichter?", a: "Verwarnung (Gelbe Karte) für den Trainer." },
+    { id: 78, q: "Bei der Strafstoß-Ausführung bewegt sich der Torhüter mit beiden Füßen zu früh von der Linie. Er steht zum Zeitpunkt des Schusses circa eineinhalb Meter vor der Linie. Der Schütze schießt den Ball gegen den Torpfosten, von wo er ins Aus geht. Entscheidung des Schiedsrichters?", a: "Abstoß. Keine Beeinflussung des Schützen durch den Torwart." },
+    { id: 79, q: "Der Torhüter bewegt sich beim Strafstoß vor der Ausführung mehrere Meter nach vorne und springt dabei auf und ab. Dadurch irritiert er den Schützen deutlich, sodass dieser den Ball am Tor vorbeischießt. Wie entscheidet der Unparteiische?", a: "Wiederholung des Strafstoßes, Ermahnung für den Torhüter wegen Irritierens." },
+    { id: 80, q: "Ein allein auf das Tor zulaufender Angreifer hat in zentraler Position etwa 12 Meter vor dem Tor den Ball bereits am Torhüter vorbeigelegt. Dieser wiederum versucht, den Ball mit einem Hechtsprung noch zu erreichen, trifft mit seinen Händen allerdings nur den Angreifer am Fuß. Entscheidungen des Schiedsrichters?", a: "Strafstoß, Verwarnung (Gelb) wegen ballorientierten Versuchs im Strafraum." },
+    { id: 81, q: "Mit hohem Tempo läuft ein Stürmer allein mit dem Ball auf das Tor zu. Er wird vom Verteidiger etwa 2 Meter innerhalb des Strafraums in zentraler Position durch ein kurzes Halten am Trikot derart behindert, dass er nicht mehr zum Torabschluss kommt. Wie entscheidet der Schiedsrichter?", a: "Strafstoß, Feldverweis (Rote Karte) wegen Haltens (keine Reduzierung bei reinem Halten)." },
+    { id: 82, q: "Nachdem der Unparteiische zu Spielbeginn das Spiel zum Anstoß freigegeben hat und die Mannschaft den Ball nach vorne spielt, läuft der Spielführer am Schiedsrichter vorbei und beleidigt ihn mit den Worten: „Pfeif bloß nicht wieder so einen Scheiß, du Depp!“ Daraufhin unterbricht der Unparteiische das Spiel. Wie muss er entscheiden?", a: "Indirekter Freistoß, Feldverweis." },
+    { id: 83, q: "Unmittelbar nachdem der Schiedsrichter den Ball zu Spielbeginn mit Pfiff freigegeben hat, dreht sich der Spieler, der zur Ausführung bereitsteht, um und ruft dem Schiedsrichter zu: „Pfeif bloß nicht wieder so einen Scheiß, du Depp!“ Danach spielt er den Ball zu seinem Mitspieler. Wie entscheidet der Referee?", a: "Wiederholung Anstoß, Feldverweis vor Spielbeginn (Team darf sich wieder vervollständigen)." },
+    { id: 84, q: "Während des laufenden Spiels werden zwei Senioren-Spieler derselben Mannschaft im Mittelkreis gegeneinander tätlich. Welche Entscheidungen trifft der Schiedsrichter?", a: "Direkter Freistoß für den Gegner, Feldverweis (Rote Karte) für beide Spieler." },
+    { id: 85, q: "Der zum Einwechseln bereitstehende Spieler mit der Nummer 13 und sein zum Spiel gehörender Mitspieler mit der Nr. 7, der gerade in der Coachingzone verletzungsbedingt behandelt wird, werden außerhalb des Spielfelds gegeneinander tätlich. Der Schiedsrichter unterbricht das laufende Spiel. Wie muss er entscheiden?", a: "Indirekter Freistoß auf der Außenlinie, Feldverweis für beide Spieler." },
+    { id: 86, q: "Der Keeper des Heimvereins spielt den Ball bei einer Abstoß-Ausführung mit dem Fuß zu seinem Verteidiger, der am Elfmeterpunkt mittig vor dem Tor steht. Dieser jedoch hat davon nichts bemerkt. Daraufhin läuft ein Stürmer, der zuvor außerhalb des Strafraums stand, nach der Ausführung des Abstoßes hinzu. Als der Torhüter erkennt, dass der Stürmer den Ball nur noch einzuschießen braucht, läuft er dem von ihm gespielten Ball hinterher und schießt ihn mit einer zweiten Berührung ins Seitenaus – unmittelbar bevor der Stürmer zum Torerfolg verwandeln kann. Entscheidungen des Schiedsrichters?", a: "Indirekter Freistoß, Feldverweis wegen Verhinderung einer klaren Torchance durch Doppelberührung." },
+    { id: 87, q: "Der Keeper des Gastvereins fängt im Spiel eine weite Flanke ab und wartet darauf, dass seine Spieler in Position laufen. Da er keine Anspielstation findet, legt er den Ball vor sich und will ihn mit dem Fuß weit in die gegnerische Hälfte spielen. Als er jedoch merkt, dass sich von der Seite ein Gegenspieler nähert, den er zuvor übersehen hat und der den auf dem Boden liegenden Ball nur noch ins Tor schießen muss, springt er in Richtung Ball und hält diesen mit den Händen fest, bevor der Stürmer einschießen kann. Wie entscheidet der Referee?", a: "Indirekter Freistoß wegen unerlaubter Handaufnahme aus dem laufenden Spiel; keine persönliche Strafe." },
+    { id: 88, q: "Schuss auf das Tor der Gastmannschaft. Ein Spieler der Heimmannschaft steht zu diesem Zeitpunkt noch im Torraum. Als der Ball auf den Torhüter zufliegt, löst er sich von seiner Stellung im Netzraum und läuft unmittelbar am Torhüter vorbei auf das Spielfeld. Dadurch ist der Torhüter irritiert, allerdings war der Spieler noch zum Zeitpunkt der Schussabgabe im Netzraum im Abseits. Welche Entscheidung trifft der Schiedsrichter?", a: "Indirekter Freistoß wegen Abseits." },
+    { id: 89, q: "Ein Angreifer hat den Torhüter umspielt, doch bevor der Ball die Torlinie überquert, läuft ein Balljunge auf das Spielfeld. Er versucht, den Ball aufzuhalten, trifft ihn auch, kann aber nicht verhindern, dass der Ball trotzdem ins Tor geht. Welche Entscheidung trifft der Schiedsrichter?", a: "Tor, Anstoß (Ball wäre ohnehin ins Tor gegangen)." },
+    { id: 90, q: "Der Schiedsrichter hat das Spiel wegen der Verletzung eines Spielers unterbrochen, ohne dass ein Regelverstoß vorgelegen hat. Nun setzt er das Spiel mit einem Schiedsrichterball fort. Der berechtigte Spieler übernimmt den korrekt ausgeführten Schiedsrichterball, läuft damit wenige Meter in Richtung Strafraum und erzielt ein Tor, ohne dass ein zweiter Spieler den Ball berührt hat. Welche Entscheidung trifft der Schiedsrichter?", a: "Abstoß. Direktes Tor aus Schiedsrichterball ist ungültig." },
+// --- BLOCK D (IDs 91-105) ---
+    { id: 91, q: "Als der Schiedsrichter von einem Auswechselspieler aus einer Gruppe, die sich neben dem eigenen Tor aufwärmt, beleidigt wird, kann er nicht ausmachen, wer der Täter ist. Daraufhin befragt er den Trainer der betreffenden Mannschaft. Dieser kann dem Schiedsrichter jedoch auch keinen Namen nennen, worauf der Referee dem Trainer stellvertretend für den nicht zu ermittelnden Spieler die Rote Karte zeigt. Handelt er richtig?", a: "Nein, der Trainer haftet nur für nicht ermittelbare Täter im Bereich der eigenen Coaching-Zone." },
+    { id: 92, q: "Da sich der Torwart des Heimvereins über einen Gegenspieler ärgert, der sich drei Meter seitlich seines Tores außerhalb des Spielfeldes befindet, wirft er während des laufenden Spiels diesem den zuvor gefangenen Spielball heftig gegen den Kopf. Wie muss der Schiedsrichter in dieser Situation entscheiden?", a: "Strafstoß, Feldverweis (Wurf außerhalb des Feldes auf Höhe des Strafraums)." },
+    { id: 93, q: "Der Auswechselspieler mit der Nr. 14 wartet auf seine Einwechslung. Währenddessen sieht er, dass ein Stürmer der gegnerischen Mannschaft an der Außenlinie frei durchlaufen kann. Der Auswechselspieler läuft nun unangemeldet auf das Spielfeld und hält diesen Spieler mit einem verwarnungswürdigen Foulspiel fest. Er verhindert mit dieser Aktion zwar keine klare Torchance, aber zumindest einen verheißungsvollen Angriff. Wie entscheidet der Schiedsrichter?", a: "Direkter Freistoß, Gelb für das unerlaubte Betreten, Gelb/Rot für das taktische Foulspiel." },
+    { id: 94, q: "Bei der Ausführung eines direkten Freistoßes verkürzt der verteidigende Spieler den Abstand auf weniger als 9,15 Meter, bevor der Ball im Spiel ist, und verhindert dabei mit einem absichtlichen und strafbaren Handspiel eine gute Angriffssituation des Gegners. Wie entscheidet der Schiedsrichter?", a: "Direkter Freistoß, Verwarnung (Ahndung des schwereren Handspiels bei gleichzeitigen Vergehen)." },
+    { id: 95, q: "Bei einem direkten Freistoß läuft der ausführende Spieler an, stoppt unmittelbar vor dem Ball und täuscht einen Schuss an, indem er ausholt, aber den Fuß hinter dem Ball aufsetzt. Nachdem der Torwart und die Spieler in der Mauer reagiert haben, spielt der Schütze den Ball seitlich zu einem Mitspieler, der diesen dann zum Torerfolg verwandelt. Wie entscheidet der Schiedsrichter?", a: "Tor; Anstoß. Finten und Abstoppen sind bei der Freistoßausführung vollkommen erlaubt." },
+    { id: 96, q: "Bei der Ausführung eines direkten Freistoßes etwa 20 Meter vor dem gegnerischen Tor nähert sich ein Angreifer, unmittelbar bevor der Ball ins Spiel gelangt, der Mauer von seitlich außen näher als einen Meter. Bei dem Freistoß wird der Ball nun vom Torwart zum Eckstoß abgewehrt. Wie verhält sich der Schiedsrichter, wenn der hinzu gelaufene Angreifer keine störende Wirkung erzielt hat?", a: "Eckstoß. Ohne nachteiligen Einfluss wird die geringe Abstandsverkürzung nicht bestraft." },
+    { id: 97, q: "Der Schiedsrichter hat aufgrund der Verletzung eines Akteurs das Spiel unterbrochen und setzt es nun mit Schiedsrichterball fort. Als er den Ball aus Brusthöhe im Beisein eines Spielers der Mannschaft, die zuvor in Ballbesitz war, auf den Boden fallen lässt, nähert sich der Gegenspieler mit schnellen Schritten, bevor der Ball den Boden berührt hat, und spielt diesen. Wie muss der Unparteiische im Folgenden entscheiden?", a: "Wiederholung des Schiedsrichterballs, Verwarnung wegen Abstandsvergehens." },
+    { id: 98, q: "Der Abwehrspieler verkürzt bei einer schnellen Einwurf-Ausführung des Gegners den Abstand zum einwerfenden Spieler auf der Seitenlinie auf weniger als zwei Meter, bevor dieser den Ball ins Spiel gebracht hat, und hält dann den eingeworfenen Ball mit der Brust auf. Wie entscheidet der Unparteiische?", a: "Indirekter Freistoß für den Einwerfer, Verwarnung für den Gegenspieler." },
+    { id: 99, q: "Ein Verteidiger versucht, einen aussichtsreichen Angriff im Bereich der Mittellinie zu unterbinden. Dabei hält er seinen Gegner einen kurzen Moment am Trikot fest. Dieser reißt sich jedoch los, läuft weiter und kann den Angriff fortsetzen. Wie entscheidet der Schiedsrichter?", a: "Weiterspielen, keine Persönliche Strafe (Reduzierung der Verwarnung bei Vorteil nach taktischem Halten)." },
+    { id: 100, q: "Einen aussichtsreichen Angriff versucht ein Verteidiger im Bereich der Mittellinie mit einem rücksichtslosen Fußeinsatz zu verhindern. Da der Stürmer weiterspielen kann, entscheidet der Schiedsrichter auf Vorteil. Was muss der Schiedsrichter in der nächsten Spielunterbrechung tun?", a: "Verwarnung in der nächsten Spielunterbrechung (keine Reduzierung bei rücksichtslosen Fouls)." },
+    { id: 101, q: "Der Schiedsrichter hat das Spiel wegen der Verletzung eines Spielers unterbrochen, ohne dass ein Regelverstoß vorgelegen hat. Nun setzt er das Spiel mit einem Schiedsrichterball fort. Ein Spieler übernimmt den korrekt ausgeführten Schiedsrichterball, läuft damit wenige Meter in Richtung Strafraum und erzielt ein Tor, ohne dass ein zweiter Spieler den Ball berührt hat. Welche Entscheidung muss der Schiedsrichter treffen?", a: "Abstoß. Ein Tor aus einem Schiedsrichterball erfordert mindestens zwei Berührungen durch verschiedene Spieler." },
+    { id: 102, q: "Ein Distanzschuss aus 30 Meter Entfernung prallt an die Torlatte. Der Ball platzt und fällt im Torraum zu Boden. Wie und mit wem setzt der Schiedsrichter nach der Unterbrechung das Spiel fort?", a: "Schiedsrichterball mit dem Torhüter der verteidigenden Mannschaft in dessen Strafraum." },
+    { id: 103, q: "Der Schiedsrichter entscheidet auf direkten Freistoß etwa 18 Meter vor dem Tor. Der ausführende Spieler bittet den Schiedsrichter, den Abstand der Mauer herzustellen. Als der Schiedsrichter damit beschäftigt ist, führt dieser Spieler den Freistoß schnell aus, schießt den Ball jedoch weit über das Tor. Wie entscheidet der Schiedsrichter?", a: "Wiederholung, Verwarnung wegen Ausführung vor Pfiff nach Anforderung des Mauerabstands." },
+    { id: 104, q: "Zu Beginn des Elfmeterschießens hat die Mannschaft A nur noch zehn Spieler zur Verfügung. Mannschaft B darf daraufhin auch ihren schlechtesten Schützen rausnehmen, um numerische Gleichheit bei den Schützen zu erzielen. Jetzt verletzt sich beim zweiten Strafstoß der Torwart der Mannschaft B. Diese Mannschaft hat jedoch ihr Auswechselkontingent schon erschöpft. Darf der zuvor wegen numerischer Gleichheit gestrichene Spieler nun als Torwart agieren und wieder am Elfmeterschießen teilnehmen?", a: "Ja. Ein zuvor wegen Spielerangleich gestrichener Spieler darf einen verletzten Torhüter ersetzen." },
+    { id: 105, q: "Nachdem der Unparteiische zu Spielbeginn das Spiel bereits zum Anstoß freigegeben und die Mannschaft den Ball nach vorne gespielt hat, läuft der Spielführer am Schiedsrichter vorbei und beleidigt ihn mit den Worten: „Pfeif bloß nicht wieder so einen Scheiß, du Depp!“ Daraufhin unterbricht der Unparteiische das Spiel. Wie muss er entscheiden?", a: "Indirekter Freistoß, Feldverweis (Rote Karte)." },
+
+    // --- BLOCK E (IDs 106-120) ---
+    { id: 106, q: "Bei der Ausführung eines Strafstoßes schießt sich der Schütze den Ball sich selbst ans Standbein, dadurch prallt der Ball in die rechte Torecke und kann vom Torhüter gehalten werden. Der Torhüter hat sich allerdings zu früh von der Linie bewegt und hat bei der Ausführung bereits mit beiden Füßen circa einen Meter vor der Linie gestanden. Wie muss der Unparteiische entscheiden?", a: "Wiederholung des Strafstoßes wegen beidseitiger Vergehen ohne persönliche Strafe." },
+    { id: 107, q: "Der Schütze täuscht bei der Ausführung eines Strafstoßes unsportlich, indem er unmittelbar in der Schussbewegung direkt vor dem Ball abstoppt und danach erst schießt. Der Torhüter ist allerdings auch zu früh von der Linie nach vorne gestartet, steht mit beiden Füßen vor der Linie und hält nun den Ball. Wie entscheidet der Schiedsrichter?", a: "Indirekter Freistoß und Verwarnung für den Schützen (höherwertiges Vergehen)." },
+    { id: 108, q: "Zwei Minuten vor dem Halbzeitpfiff blockiert der als Einwechselspieler und Spielertrainer nominierte und sich auf der Auswechselbank befindliche Coach des Gastvereins den Spielball. So verhindert er die schnelle Einwurfausführung des Gegners. Wie muss der Schiedsrichter in diesem Fall entscheiden?", a: "Einwurf, Feldverweis (Rote Karte) für den Trainer." },
+    { id: 109, q: "Im Bereich der Mittellinie hält der Verteidiger seinen Gegenspieler aus taktischen Gründen am Trikot fest (SPA) und bringt ihn so zu Fall. Dieser Angreifer konnte jedoch im letzten Moment den Ball noch in die Spitze zu seinem Mitspieler spielen, der einen aussichtsreichen Angriff startet. Der Schiedsrichter gewährt deshalb den Vorteil. In diesem Moment hebt aber der Schiedsrichter-Assistent die Fahne und zeigt eine strafbare Abseitsposition an. Wie muss der Schiedsrichter in dieser Situation entscheiden?", a: "Direkter Freistoß, Verwarnung (das Foul fand vor der strafbaren Abseitsstellung statt)." },
+    { id: 110, q: "Eine Flanke wird vor das Tor geschlagen. Als der Stürmer den Ball stoppen will, berührt er diesen unabsichtlich mit der Hand. Dies ist kein strafbares Handspiel, sondern lediglich eine Handberührung. Als der Angreifer den Ball nun aus sechs Meter Entfernung ins Tor schießen will, wird er von einem Verteidiger von hinten am Trikot zu Boden gerissen. Wie entscheidet der Schiedsrichter?", a: "Strafstoß, Verwarnung (keine Torchance, da unmittelbar nach Handberührung kein Tor erzielt werden kann)." },
+    { id: 111, q: "Ein Verteidiger spielt den Ball mit dem Fuß zu seinem Torwart zurück. Der Torwart versucht, diesen Ball zunächst zu stoppen und zur Seite zu spielen. Aufgrund von technischen Unzulänglichkeiten gelingt ihm dies jedoch nicht. Als der Stürmer die Schwierigkeiten des Torwarts bemerkt, attackiert er ihn. Jetzt nimmt der Torwart den Ball in die Hand, um ein Eingreifen des Stürmers zu verhindern. Wie entscheidet der Unparteiische?", a: "Indirekter Freistoß, keine persönliche Strafe." },
+    { id: 112, q: "Der Spieler mit der Nummer 3 hat sich den Ball zum Strafstoß hingelegt und macht sich zum Schuss bereit. Jetzt läuft aber nach der Freigabe des Schiedsrichters der Spieler mit der Nummer 10 zum Ball und verwandelt diesen zum Torerfolg. Wie entscheidet der Schiedsrichter?", a: "Indirekter Freistoß, Verwarnung für den falschen Schützen (Nr. 10)." },
+    { id: 113, q: "Der Torwart wehrt im Strafraum einen Angriff des Gegners ab. Während kurz darauf der Gegenangriff läuft und der Ball sich bereits in der anderen Spielfeldhälfte befindet, maßregelt der Torwart seinen Abwehrspieler wegen seines schlechten Defensiv-Verhaltens. Dieser ist darüber so erbost, dass er seinem Torwart heftig gegen die Brust schlägt. Er steht währenddessen knapp außerhalb seines Strafraums, der Torwart innerhalb. Der Schiedsrichter unterbricht das Spiel. Welche Sanktionen müssen nun erfolgen und wo wird das Spiel fortgesetzt?", a: "Strafstoß, Feldverweis (Rote Karte) für den Abwehrspieler." },
+    { id: 114, q: "Einen harmlosen Flankenball lässt der Torwart der Heimmannschaft durch die Hände gleiten. Beinahe hätte durch dieses Vergehen die Gasteam-Mannschaft ein Tor erzielt. In höchster Not kann ein anderer Abwehrspieler den Ball weit in die gegnerische Hälfte schlagen. Offensichtlich verärgert über diese Situation, kritisiert der eigene Auswechselspieler, der sich neben dem Tor aufwärmt, den Torwart. Daraufhin verlässt der Torwart das Spielfeld und schlägt den neben dem Tor stehenden Auswechselspieler seiner Mannschaft. Wie entscheidet der Schiedsrichter und wo wird das Spiel fortgesetzt?", a: "Indirekter Freistoß auf der Torlinie am Tatort, Feldverweis für den Torwart." },
+    { id: 115, q: "Strafstoß für die Heimmannschaft. Der Schütze läuft an, spielt den Ball etwa drei Meter seitlich nach vorne und führt den Strafstoß somit indirekt aus. Der in den Strafraum gelaufene Mitspieler verwandelt zum Torerfolg. Allerdings war dieser Mitspieler deutlich zu früh in den Strafraum eingedrungen. Wie entscheidet der Schiedsrichter?", a: "Indirekter Freistoß für die verteidigende Mannschaft." },
+    { id: 116, q: "Der auf dem Spielbericht eingetragene Co-Trainer des Heimvereins steht hinter der Barriere im Zuschauerbereich und gibt von dort aus lautstark taktische Anweisungen. Der Teamoffizielle ist dem Schiedsrichter bekannt. Sollte der Schiedsrichter hier eingreifen?", a: "Nein, ein Aufenthalt außerhalb des Innenraums ist nicht regelwidrig." },
+    { id: 117, q: "Ein Angreifer flankt den Ball aus Linksaußen-Position unmittelbar vor der Grundlinie in den Torraum. Dabei gerät er, genauso wie der mitlaufende Verteidiger, über die Torlinie seitlich des Tores ins Aus. Den in die Mitte geschlagenen Ball köpft der am Fünf-Meter-Raum stehende Mitspieler aufs Tor. Der auf der Torlinie stehende Torwart lenkt den Ball mit einem Reflex zur Seite. In diesem Moment läuft nun der sich zuvor im Toraus befindende Stürmer wieder zurück auf das Spielfeld und schießt den Abpraller ins Tor. Wie entscheidet der Schiedsrichter?", a: "Tor, Anstoß. Beide Spieler im Toraus zählen als auf der Torlinie stehend; somit kein Abseits." },
+    { id: 118, q: "Bei der Ausführung eines Strafstoßes berührt der Schütze den Ball versehentlich zweimal, anschließend geht der Ball ins Tor. Wie muss der Unparteiische in diesem Fall entscheiden?", a: "Wiederholung des Strafstoßes." },
+    { id: 119, q: "Von der Auswechselbank aus wird der Schiedsrichter lautstark beleidigt. Daraufhin geht er zum Trainer der Mannschaft und verlangt den Namen des Spielers, der ihn beleidigt hat. Da es sich bei dem Trainer um einen Spielertrainer handelt, der sich zu diesem Zeitpunkt auf dem Spielfeld befindet, weist der Schiedsrichter ihn darauf hin, dass er ansonsten die Konsequenzen für das Fehlverhalten seines Spielers tragen muss. Handelt der Schiedsrichter richtig?", a: "Nein. In der Coaching-Zone haftet der dort anwesende höchstrangige Trainer (z. B. Co-Trainer)." },
+    { id: 120, q: "Bei der Ausführung eines Strafstoßes schießt sich der Schütze den Ball selbst ans Bein. Von dort aus prallt der Ball rechts am Tor vorbei ins Aus. Wie entscheidet der Schiedsrichter?", a: "Indirekter Freistoß wegen unabsichtlicher Doppelberührung ohne Torerfolg." },
+
+    // --- BLOCK C (IDs 121-135) ---
+    { id: 121, q: "In Erwartung eines hohen Flankenballs laufen der Verteidiger und der Stürmer im Strafraum zum Ball. Beim Hochspringen tritt der Verteidiger dem Stürmer unabsichtlich, aber fahrlässig auf den Fuß. So verhindert er, dass der Stürmer den Ball, der sich in unmittelbarer Spielnähe befindet, noch erreichen kann. Wie entscheidet der Schiedsrichter?", a: "Strafstoß. Der Verteidiger agiert fahrlässig im Zweikampf mit dem Gegner um den Ball." },
+    { id: 122, q: "Abseits des Spielgeschehens und in der anderen Spielfeldhälfte tritt ein Verteidiger dem Stürmer etwa 25 Meter vor dem eigenen Tor unabsichtlich auf den Fuß. Der Schiedsrichter-Assistent bekommt das mit und meldet es in der nächsten Unterbrechung dem Schiedsrichter. Wie muss er entscheiden?", a: "Spielfortsetzung gemäß der regulären Spielunterbrechung (bzw. Schiedsrichterball). Es liegt ein klassischer Unfall vor." },
+    { id: 123, q: "Unmittelbar vor der Ausführung eines Strafstoßes springt der Torhüter auf der Torlinie mit beiden Beinen mehrfach in die Höhe und bewegt sich zusätzlich seitlich auf der Torlinie. In der Folge gelingt es dem Keeper, den Ball über die Torlinie neben dem Tor abzuwehren. Entscheidung mit Begründung?", a: "Eckstoß. Das Verhalten des Torhüters ist korrekt. Er darf sich auf der Torlinie seitlich bewegen, solange er sich nicht vor die Linie bewegt." },
+    { id: 124, q: "Der Spieler mit der Nr. 5 des Heimvereins reklamiert während des laufenden Spiels circa 25 Meter vor dem Tor heftig beim Schiedsrichter. Dieser verhängt deshalb einen indirekten Freistoß und verwarnt den Spieler. Bei der Ausführung vergisst der Unparteiische, den Arm zu heben, und der Ball landet im Tor. Entscheidung?", a: "Wiederholung des Freistoßes wegen Schiedsrichterfehlers bei direkter Torerzielung." },
+    { id: 125, q: "Da die Ausführung eines indirekten Freistoßes an der Strafraumgrenze sehr schnell erfolgt, gelingt es dem Schiedsrichter nicht mehr, den Arm zu heben. Der Angreifer schießt den Ball direkt auf das Tor, der Torhüter kann den Ball nicht erreichen, aber sein Verteidiger köpft den Ball im letzten Moment über die Querlatte ins Aus. Wie entscheidet der Schiedsrichter?", a: "Eckstoß. Eine Wiederholung gibt es nur, wenn der Ball direkt ins Tor gelangt wäre." },
+    { id: 126, q: "Die Nr. 11 der Heimmannschaft startet einen Flankenlauf über die linke Angriffsseite. Zeitgleich läuft sein Mitspieler, der zentrale Angriffsspieler, in Stellung. Er befindet sich vor seinem Verteidiger, aber nicht in einer Abseitsposition. Noch bevor der Ball von der Nr. 11 abgespielt wird, bringt der Verteidiger den Stürmer knapp außerhalb des Strafraums durch ein Beinstellen zu Fall. Wie entscheidet der Schiedsrichter?", a: "Direkter Freistoß, Gelbe Karte (Foul in unsportlicher Absicht zur Verhinderung eines Angriffs im Entstehen)." },
+    { id: 127, q: "Aufgrund einer schweren Verletzung wird der Torwart des Gastvereins hinter dem eigenen Tor außerhalb des Spielfeldes weiterbehandelt, ohne dass eine Auswechslung erfolgt. Auf Wunsch der betroffenen Mannschaft wird das Spiel fortgesetzt und den Platz im Tor nimmt währenddessen ein entsprechend gekleideter Feldspieler ein. Ein paar Sekunden später läuft nun der zuvor behandelte und jetzt wieder genesene Torwart ohne die Zustimmung des Schiedsrichters auf das Feld und hält den Ball vor Überschreiten der Torlinie mit der Hand auf. Er verhindert so einen Torerfolg der gegnerischen Mannschaft. Wie muss der Schiedsrichter entscheiden?", a: "Strafstoß; Feldverweis (Rote Karte). Ein Torwartwechsel kann nur in der Spielruhe stattfinden; er agiert regeltechnisch als Feldspieler und verhindert ein Tor durch Handspiel." },
+    { id: 128, q: "Gegen Spielende ist der Ball über die Torlinie ins Aus gegangen, das Spiel wird mit Abstoß fortgesetzt. Die gegnerische Mannschaft ist inklusive Torhüter sehr weit aufgerückt. Mit Unterstützung des Windes kann der Torwart deshalb aus dem Abstoß heraus direkt ein Tor erzielen. Ist dieses Tor gültig?", a: "Ja, das Tor ist gültig. Aus einem Abstoß kann direkt ein Tor erzielt werden." },
+    { id: 129, q: "Aus Verärgerung über seinen Gegenspieler, der schon dreimal in dem Spiel als Torschütze erfolgreich war, versetzt der Abwehrspieler diesem einen Tritt innerhalb des eigenen Strafraums. Der Ball war zu diesem Zeitpunkt jedoch in der anderen Spielhälfte. Der neutrale Schiedsrichter-Assistent meldet dem Schiedsrichter diesen Vorfall. Wie entscheidet der Schiedsrichter?", a: "Strafstoß; Feldverweis (Tätlichkeit im eigenen Strafraum bei laufendem Spiel)." },
+    { id: 130, q: "Im Mittelkreis köpft die Nr. 8 des Heimvereins den Ball beim Hochspringen Richtung Außenlinie. Beim Landen streift der Spieler seinen Gegner mit den Stollen am Schienbein entlang, ohne dass er dabei eine Extrabewegung ausführt. Der Schiedsrichter hat den Vorgang gesehen. Wie entscheidet er?", a: "Weiterspielen. Es liegt ein korrektes Zweikampfverhalten und ein unverschuldeter Unfall beim Landen vor." },
+    { id: 131, q: "Indirekter Freistoß für die angreifende Mannschaft etwa sieben Meter direkt vor dem Tor. Wo dürfen die abwehrenden Spieler bei der Mauerbildung stehen?", a: "Auf der Torlinie zwischen den Pfosten." },
+    { id: 132, q: "Nach einem rücksichtslosen Einsatz im Mittelfeld vom bereits verwarnten Spieler des Gastvereins mit der Nr. 2 erkennt der Schiedsrichter eine aussichtsreiche Vorteilsituation und lässt das Spiel weiterlaufen. Der Ball läuft über die rechte Angriffsseite und wird dann in den Rücken der Abwehr an die Strafraumgrenze gespielt. Als der Stürmer den Ball aufs Tor schießen will, spitzelt der mittlerweile zurückgelaufene Spieler des Gastvereins mit der Nr. 2 dem Spieler den Ball weg. Dabei trifft er eindeutig den Ball und nicht die Beine des Gegners. Der Ball geht ins Seitenaus. Wie muss der Schiedsrichter entscheiden?", a: "Indirekter Freistoß; „Gelb/Rot“ für den Spieler Nr. 2. Greift ein vorbelasteter Spieler nach Vorteilsgewährung vor der nächsten Unterbrechung wieder ins Spiel ein, gibt es indirekten Freistoß und Feldverweis." },
+    { id: 133, q: "Ein Spieler wirft aus Verärgerung während des laufenden Spiels einen Schienbeinschoner aus dem Spielfeld heraus seinem Trainer, der in der Coachingzone steht, heftig gegen die Brust. Welche Entscheidung trifft der Unparteiische?", a: "Indirekter Freistoß auf der Seitenlinie, Feldverweis (Rote Karte)." },
+    { id: 134, q: "Bei einem Landesligaspiel spielt der Verteidiger den Ball in Richtung eigenes Tor. Der letzte Verteidiger nimmt den Ball an, und als er angegriffen wird, dreht er sich um, chippt den Ball zweimal hoch und köpft ihn zu seinem Torwart zurück. Der Torwart jedoch nimmt den Ball nicht in die Hand, sondern schlägt ihn weit nach vorne. Wie entscheidet der Schiedsrichter?", a: "Indirekter Freistoß dort, wo der Verteidiger stand; Verwarnung wegen Umgehung der Rückpassregel per Trick." },
+    { id: 135, q: "Nach einem Zweikampf im Torraum bleibt ein Angreifer der Mannschaft A verletzt im gegnerischen Torraum unmittelbar vor der Torlinie liegen, ein Foul war nicht zu erkennen. Als der Ball zur Mannschaft A gelangt, schießt der Mitspieler des offenbar verletzten Spielers aufs Tor. Dabei streift der Ball, der ohnehin ins Tor gegangen wäre, den am Boden liegenden Spieler leicht, bevor er dann die Torlinie überquert. Entscheidung des Referees?", a: "Indirekter Freistoß wegen strafbaren Abseits durch die Ballberührung." },
+
+    // --- BLOCK A (IDs 136-150) ---
+    { id: 136, q: "Bei einem Einwechselvorgang geht der auszuwechselnde Spieler langsam vom Feld, sodass die Zeit von maximal zehn Sekunden deutlich überschritten wird. Daraufhin verwarnt der Schiedsrichter diesen Spieler und lässt dann danach erst den Einwechselspieler zum Spiel zu. Handelt der Schiedsrichter richtig?", a: "Nein. Zum einen ist eine Verwarnung nur in Ausnahmefällen und bei besonders unsportlichem Verhalten vorgesehen, und zum anderen darf der Einwechselspieler erst nach Ablauf von einer Minute und einer erfolgten Spielunterbrechung ins Spiel eintreten." },
+    { id: 137, q: "Nachdem ein Einwechselspieler aufgrund eines verzögerten Wechselvorgangs eine Minute gewartet hat, will er nach Ablauf dieser Minute ins laufende Spiel eintreten, da sich das Spiel zu diesem Zeitpunkt nicht in seiner Nähe befindet. Lässt der Schiedsrichter dies zu?", a: "Nein. Der Einwechselspieler muss die nächste Spielunterbrechung abwarten, selbst wenn diese noch einige Zeit länger als die vorgeschriebene einminütige Wartezeit beträgt." },
+    { id: 138, q: "Ein Spieler will mit einem festverankerten Ohrring spielen, der nicht absteht und der weder eine Gefahr für den Spieler selbst noch für andere darstellt. Lässt der Schiedsrichter dies zu und wenn ja, unter welchen Voraussetzungen?", a: "Ja. Das Schmuckstück muss jedoch abgetapt werden. Grundsätzlich soll Schmuck nach wie vor abgelegt werden. Ist dies aber nur schwer möglich, ist ein Abtapen Voraussetzung." },
+    { id: 139, q: "Ein Abwehrspieler will den Ball nach vorne zu seinem Stürmer in der gegnerischen Hälfte spielen. Dies verhindert der Unparteiische, weil er aus Versehen in die Schussbahn läuft und den Ball aufhält, der nun wiederum zurück zum Stürmer der gegnerischen Mannschaft gelangt. Jetzt pfeift der Schiedsrichter. Wie und wo ist das Spiel fortzusetzen?", a: "Schiedsrichterball an der Stelle, wo der Schiedsrichter getroffen wurde, mit der Mannschaft, die in Ballbesitz war oder gekommen wäre." },
+    { id: 140, q: "Nach einer verletzungsbedingten Unterbrechung muss der behandelte Spieler das Spielfeld verlassen und wird außerhalb des Spielfeldes weiter versorgt. Nach einer Minute gibt er dem Schiedsrichter ein Zeichen, wieder eintreten zu können. Der Schiedsrichter verweigert dies und weist darauf hin, dass er nur in einer Spielruhe nach einer Minute wieder das Spielfeld betreten darf. Handelt der Schiedsrichter hier richtig?", a: "Nein. Die Spielruhe muss nur abgewartet werden, wenn es sich um einen Einwechselvorgang handelt, der verzögert wurde. Bei einer verletzungsbedingten Spielerbehandlung darf der Spieler nach Ablauf der Minute auf Zeichen des Schiedsrichters sofort zurückkehren, sofern er nicht unmittelbar ins Spielgeschehen eingreifen kann." },
+    { id: 141, q: "Ein Einwechselspieler muss wegen Zeitverzögerung beim Wechselvorgang eine Minute warten. Inzwischen fällt ein Tor für den Gegner. Nach einer Minute und der dann nächsten Spielunterbrechung will der Trainer statt diesem nun einen anderen Spieler einwechseln, obwohl das Auswechselkontingent erschöpft ist. Ist dies möglich?", a: "Nein. Der Einwechselspieler darf nicht geändert werden, es sei denn, der Trainer hätte noch eine Auswechslung frei und würde nun eine weitere Auswechslung vornehmen." },
+    { id: 142, q: "Der Schiedsrichter hat wegen Zeitverzögerung beim Wechselvorgang den Spieler mit der Nummer 8 zunächst nicht zum Spiel zugelassen. Während das Spiel nun weiterläuft, beleidigt dieser Spieler den Schiedsrichter-Assistenten am Spielfeld mit den Worten: „Ihr seid doch alle blind!“ Der Schiedsrichter-Assistent meldet diesen Vorgang, während die Mannschaft dieses Spielers im Ballbesitz ist. Wie muss der Schiedsrichter handeln?", a: "Indirekter Freistoß auf der Außenlinie, Feldverweis (Rote Karte). Auch wenn der Spieler das Spielfeld noch nicht betreten hat, so gilt er in diesem Fall als bereits zum Spiel zugehöriger Spieler und seine Mannschaft muss dezimiert weiterspielen." },
+    { id: 143, q: "Strafstoß: Der Schütze rutscht aus, der Ball prallt nach dem Schuss noch gegen sein Standbein und fliegt Richtung Tor. Der Torhüter hat sich allerdings zu früh mit beiden Füßen von der Torlinie nach vorn bewegt und kann den Ball über die Querlatte abwehren. Wie entscheidet der Schiedsrichter?", a: "Wiederholung des Strafstoßes. Da hier Vergehen beider Spieler vorliegen, wird das Spiel nicht mit einem indirekten Freistoß fortgesetzt, sondern es wird die Wiederholung angeordnet." },
+    { id: 144, q: "Nachdem sich ein Spieler an der Mittellinie durchgespielt hat, läuft er nun mit dem Ball allein auf das gegnerische Tor zu. Dem Verteidiger gelingt es, den Spieler circa 25 Meter vor dem Tor zu Fall zu bringen, indem er ihn umreißt. Ein weiterer Angreifer ist jedoch in der Lage, den Ball unter Kontrolle zu bringen, noch einige Meter zu laufen und diesen zum Torerfolg zu verwandeln. Der Schiedsrichter reduziert aufgrund des Vorteils die Persönliche Strafe von „Rot“ auf „Gelb“ und setzt das Spiel mit Anstoß fort. Handelt der Schiedsrichter richtig?", a: "Ja, aber nur in Bezug auf die Spielfortsetzung. Nein, in Bezug auf die Persönliche Strafe. Der Spieler ist nicht zu verwarnen, da durch den Vorteil die erste Reduzierung erfolgt und durch den Torerfolg die zweite." },
+    { id: 145, q: "Eine Mannschaft, die anfangs mit elf Spielern angetreten ist, hat bereits zwei Spieler durch Verletzungen verloren und dazu noch zwei Feldverweise erhalten. Nun ist nach einer verletzungsbedingten Behandlung ein Spieler weniger auf dem Platz, und die nächste Spielfortsetzung würde nur mit sechs Spielern stattfinden. Muss der Schiedsrichter das Spiel abbrechen?", a: "Nein. Bei einer temporären Unterschreitung der Mindestanzahl von sieben Spielern ist kein Spielabbruch notwendig, da sich die Mannschaft nach kurzer Zeit wieder vervollständigen kann." },
+    { id: 146, q: "Abstoß: Der Schiedsrichter pfeift und hebt den Arm, weil der Torhüter sich seiner Meinung nach etwas zu gemächlich bewegt. Er zählt den Fünf-Sekunden-Countdown runter, doch der Torhüter hat bis dahin den Ball noch immer nicht ins Spiel gebracht. Wie entscheidet der Schiedsrichter, und wo muss das Spiel fortgesetzt werden?", a: "Eckstoß für die gegnerische Mannschaft von der Seite, die dem zuvor verhängten Abstoß am nächsten war." },
+    { id: 147, q: "Einwurf: Der Spieler hebt, bevor der Ball die Hände verlassen hat, deutlich einen Fuß. Der Ball springt jedoch zunächst außerhalb des Spielfeldes auf den Boden auf und rollt erst danach ins Spielfeld. Dort kann nun ein Gegner den Ball annehmen und einen vielversprechenden Angriff starten. Wie entscheidet der Schiedsrichter?", a: "Wiederholung des Einwurfs durch die gleiche Mannschaft. Der Ball muss zuerst ins Spielfeld gelangen, bevor er den Boden berührt." },
+    { id: 148, q: "Ein Spieler muss für eine Verletzungsbehandlung das Spielfeld verlassen. Nun wechselt der Verein diesen Spieler aus. Muss der Einwechselspieler deshalb auch eine Minute auf den Eintritt warten?", a: "Nein. In diesem Fall darf der Einwechselspieler sofort teilnehmen." },
+    { id: 149, q: "Ein Spieler bleibt nach einem Zweikampf verletzt am Boden liegen. Der Schiedsrichter bemerkt dies und unterbricht deshalb das Spiel. Nach Befragen teilt dieser Spieler dem Schiedsrichter jedoch mit, dass er keine Behandlung braucht und steht kurz darauf auch wieder auf. Wie ist die weitere Vorgehensweise?", a: "Der Spieler muss trotzdem das Spielfeld verlassen und darf es erst wieder mit Zustimmung des Schiedsrichters nach einer Minute betreten." },
+    { id: 150, q: "Eckstoß: Vor der Ausführung zählt der Schiedsrichter den Countdown von fünf herunter – und nachdem der Spieler den Ball nicht ins Spiel bringt, verhängt er einen Abstoß für die verteidigende Mannschaft. Allerdings verwarnt er den auf Zeit spielenden Spieler nicht. Hat der Unparteiische hier richtig gehandelt?", a: "Nein, beim Eckstoß gibt es keinen Countdown – es bleibt beim Eckstoß. Eine Verwarnung wird nur dann ausgesprochen, wenn der Spieler trotz Aufforderung die Spielfortsetzung nicht ausführt." },
+
+    // --- BLOCK B (IDs 151-165) ---
+    { id: 151, q: "12. Minute, Strafstoß für die Heimmannschaft: Der Schütze läuft an, rutscht weg und schießt sich unabsichtlich den Ball an den zweiten Fuß. Von dort aus geht der Ball über das Tor. Entscheidung des Schiedsrichters?", a: "Indirekter Freistoß wegen der unabsichtlichen Doppelberührung ohne Torerfolg." },
+    { id: 152, q: "27. Minute, erneut entscheidet der Schiedsrichter auf Strafstoß. Wieder rutscht auf dem nassen Platz der Schütze weg und schießt sich gegen das Standbein. Von dort aus geht der Ball unerreichbar für den Torhüter ins Tor. Entscheidung des Schiedsrichters?", a: "Wiederholung. Bei einer unabsichtlichen Doppelberührung mit nachfolgendem Torerfolg muss der Strafstoß wiederholt werden." },
+    { id: 153, q: "35. Minute, der Schiedsrichter zeigt auf den Punkt: Der Platz ist immer noch nass, und wieder rutscht der Schütze weg und spielt sich den Ball unabsichtlich ans Standbein. Von dort aus prallt er Richtung Tor. Der Torhüter war jedoch vor der ersten Berührung eindeutig zu früh von der Torlinie nach vorne gelaufen und kann den Ball jetzt unter Kontrolle bringen, ohne dass ein Tor erzielt wird. Entscheidung des Schiedsrichters?", a: "Wiederholung des Strafstoßes. Da hier ein gleichwertiges Vergehen von beiden Mannschaften vorliegt, von denen keines verwarnt wird, muss somit eine Wiederholung angeordnet werden." },
+    { id: 154, q: "Kurz vor der Halbzeitpause entscheidet der Schiedsrichter zum wiederholten Mal auf Strafstoß. Der Schütze läuft an, verlädt den Torhüter, trifft jedoch nur den Pfosten. Von dort aus kommt der Ball zurück und wird von ihm selbst zum Torerfolg verwandelt, ohne dass ein anderer Spieler zuvor den Ball berührt hat. Welche Entscheidung trifft der Unparteiische?", a: "Indirekter Freistoß wegen einer bewussten Doppelberührung." },
+    { id: 155, q: "Kurz nach der Halbzeitpause gibt es Strafstoß für den Heimverein. Der Schütze stoppt kurz seinen Anlauf. Der Torhüter reagiert aufgrund dessen schnell, ohne dass er die Torlinie zu früh verlässt, springt aber ins falsche Eck. Der Schütze setzt seinen Anlauf fort und erzielt ein Tor. Entscheidung des Schiedsrichters?", a: "Tor, Anstoß. Hier handelt es sich nicht um ein unerlaubtes Täuschen. Dies bezieht sich nur auf die reine Schussbewegung bzw. den Stoß." },
+    { id: 156, q: "In der 55. Minute entscheidet der Schiedsrichter nach einem klaren Handspiel im Strafraum durch den Verteidiger auf Strafstoß für den Gastverein. Der Schütze läuft an und beim Schuss stoppt er die Schussbewegung unmittelbar vor der Ballberührung, täuscht somit den Torhüter und der Ball geht ins Tor. Entscheidung des Schiedsrichters?", a: "Indirekter Freistoß; Verwarnung des Schützen wegen unerlaubten Täuschens." },
+    { id: 157, q: "Nach gut einer Stunde entscheidet der Schiedsrichter erneut auf Strafstoß, wieder für den Gastverein. Diesmal tritt nicht der Schütze an, der zuvor unsportlich getäuscht hat, sondern ein gerade eingewechselter Spieler. Dieser macht es aber seinem Mannschaftskollegen gleich, stoppt auch die Schussbewegung unmittelbar vor dem Ball, doch der Torhüter kann den Ball zum Eckstoß abwehren. Entscheidung des Schiedsrichters?", a: "Indirekter Freistoß; Verwarnung für den Schützen." },
+    { id: 158, q: "In der 75. Minute gibt es jetzt wieder Strafstoß für den Heimverein. Der Spieler, der anläuft, stoppt die Schussbewegung eindeutig, der Torhüter jedoch reagiert schnell und bewegt sich noch vor dem Schuss mit beiden Füßen von der Torlinie deutlich nach vorne und hält den Ball. Entscheidung des Schiedsrichters?", a: "Indirekter Freistoß und Verwarnung für den Schützen. Das unerlaubte Täuschen ist das höherwertige Vergehen." },
+    { id: 159, q: "In der 80. Minute zeigt der Schiedsrichter nach einem klaren Foul des Verteidigers zum wiederholten Mal auf den Strafstoßpunkt. Als der Schütze den Strafstoß ausführt, befinden sich mehrere Spieler beider Mannschaften zu früh im Strafraum, jedoch wird der Ball nur von einem Stürmer, der zu früh in den Strafraum gelaufen ist, erreicht, nachdem der Torhüter diesen zuvor abgewehrt hat. Der Stürmer verwandelt den Ball zum Torerfolg. Entscheidung des Schiedsrichters?", a: "Indirekter Freistoß für die Verteidiger. Nur der Stürmer greift in einer torgefährlichen Situation aktiv ein." },
+    { id: 160, q: "Kurz vor Ende der Partie entscheidet der Schiedsrichter erneut auf Strafstoß. Der Torhüter ist jedoch reaktionsschnell und kann den Ball abwehren. Dieser rollt die Linie entlang Richtung Eckfahne. Ein Abwehrspieler erläuft sich den Ball und schießt ihn kurz vor der Eckfahne ins Seitenaus. Dieser Spieler war allerdings zu früh in den Strafraum eingedrungen. Entscheidung des Schiedsrichters?", a: "Weiterspielen. Zu frühes Eindringen in den Strafraum ist allein noch nicht strafbar, solange keine torreife Situation kreiert oder aktiv verhindert wird." },
+    { id: 161, q: "Beim Elfmeterschießen möchte eine Mannschaft nach dem dritten Strafstoß die Reihenfolge ändern. Ist dies erlaubt?", a: "Ja. Jederzeit kann die Mannschaft die Reihenfolge ändern. Ein Spieler darf erst dann erneut antreten, wenn alle berechtigten Spieler geschossen haben." },
+    { id: 162, q: "Bei einer Auswechslung soll der Spielführer das Spielfeld verlassen. Er muss seine Spielführerbinde noch einem Kollegen übergeben und benötigt so etwas mehr Zeit als die vom Schiedsrichter zu überwachenden zehn Sekunden. Handelt der Unparteiische richtig, wenn er den Vorgang unterbindet/ahndet?", a: "Nein. Bei Übergabe einer Spielführerbinde oder der Beteiligung eines verletzten Spielers darf der Vorgang etwas länger dauern." },
+    { id: 163, q: "Der Schiedsrichter erkennt, wie ein Spieler seinem Gegenspieler hinter vorgehaltener Hand etwas zuruft. Daraufhin reagiert er, indem er den Spieler in dieser Spielruhe mit „Rot“ des Feldes verweist. Handelt der Schiedsrichter richtig?", a: "Nein. Der Spieler ist nicht des Feldes zu verweisen. Maximal, wenn er es in konfrontativer und unsportlicher Absicht tut, ist er zu verwarnen, sofern keine Beleidigung vorlag." },
+    { id: 164, q: "In einem Spiel mit extrem hohen Außentemperaturen ordnet der Schiedsrichter eine Trinkpause an. Ein Spieler, der wegen einer verletzungsbedingten Behandlung noch etwa 20 Sekunden auf seinen Wiedereintritt hätte warten müssen, möchte nun wieder eintreten. Lässt der Schiedsrichter dies zu?", a: "Ja. Die Trinkpause wird als offizielle Unterbrechung betrachtet." },
+    { id: 165, q: "Ein Spieler hat nach einer Verletzung eine einminütige Wartezeit auf seinen Wiedereintritt abzuleisten. Nach etwa einer halben Minute möchte der Trainer jedoch diesen Spieler auswechseln. Lässt der Schiedsrichter dies zu?", a: "Ja. Bei einer regulären Auswechslung erlischt die Wartezeit für den neu eintretenden Spieler." },
+
+    // --- BLOCK L (Neuestes Heft aus den Fotos / IDs 166-180) ---
+    { id: 166, q: "Situation 1: Nach einer umstrittenen Torerzielung läuft der Trainer der Mannschaft, gegen die das Tor erzielt wurde, circa acht Meter auf den Platz und bleibt dort stehen. So verhindert er, dass der Schiedsrichter das Spiel mit Anstoß fortsetzen lassen kann. Entscheidung des Schiedsrichters?", a: "Rote Karte und Verweis des Trainers aus dem Innenraum. Da der Trainer in unsportlicher Absicht das Spielfeld betritt und das Spiel beeinflusst, indem er den Anstoß verhindert, ist er des Feldes zu verweisen. Eine solche Aktion von einem Teamoffiziellen ist immer härter zu bestrafen als zum Beispiel bei einem Auswechselspieler." },
+    { id: 167, q: "Situation 2: Der Mitspieler passt seinem Torwart den Ball über acht Meter kontrolliert mit dem Fuß zu. Der Torwart will diesen wiederum direkt nach vorne klären, trifft ihn aber nicht richtig. Der Ball steigt in die Höhe, der Torwart läuft hinterher und fängt den herunterkommenden Ball unmittelbar vor dem einschussbereiten Stürmer. Wie reagiert der Schiedsrichter?", a: "Weiterspielen, kein Vergehen. Da der Torwart einen Klärungsversuch unternommen hat, dieser aber verunglückte, darf er nach diesem verunglückten Versuch den Ball mit den Händen spielen, obwohl es sich zuvor um ein absichtliches Zuspiel des Verteidigers gehandelt hat." },
+    { id: 168, q: "Situation 3: Der Torwart hat den Ball von seinem Verteidiger kontrolliert mit dem Fuß zugespielt bekommen. Er legt sich diesen Ball drei Meter vor und will ihn dann mit dem Fuß ins Mittelfeld schießen. In diesem Moment wird er von einem Angreifer angegriffen. Der Torwart wirft sich jetzt auf den Ball und nimmt ihn mit den Händen auf, um zu verhindern, dass der Angreifer den Ball ins Tor schießt. Wie entscheidet der Schiedsrichter?", a: "Indirekter Freistoß, keine Persönliche Strafe. Da es sich hier nicht um ein zweifaches Spielen des Balles nach einer Spielfortsetzung handelt, sondern lediglich um ein unerlaubtes Spielen während des laufenden Spiels, wird in dieser Situation auch nicht von einer Torchancenverhinderung gesprochen, sondern nur von einem technischen Regelvergehen." },
+    { id: 169, q: "Situation 4: Nach einigen umstrittenen Entscheidungen kurz vor dem Halbzeitpfiff läuft der Trainer, nachdem der Schiedsrichter zur Pause gepfiffen hat, auf das Spielfeld. Allerdings spricht er den Schiedsrichter nicht an, sondern zieht nur seinen Spielführer vom Schiedsrichter-Team weg, sodass dieser nicht mit den Unparteiischen diskutieren kann. Entscheidung des Schiedsrichters?", a: "Trainer, Spieler und Schiedsrichter gehen in die Halbzeitpause, es gibt keine weiteren Sanktionen. Da der Trainer weder in unsportlicher noch in konfrontativer Absicht auf das Spielfeld läuft und auch keinen Protest gegen den Schiedsrichter richtet, ist hier kein strafbares Verhalten festzustellen. Hätte der Trainer den Schiedsrichter zur Rede gestellt oder wäre ihn mit einer konfrontativen Gestik angegangen, dann wäre der Trainer mit „Rot“ des Feldes verwiesen worden." },
+    { id: 170, q: "Situation 5: Bei einem Zweikampf auf Höhe des Torpfostens geraten der Stürmer und der Verteidiger über die Torlinie außerhalb des Spielfelds. Dort tritt der Verteidiger dem Stürmer aus Verärgerung heftig in die Beine. Der Ball befindet sich noch im Spielfeld außerhalb des Strafraums. Entscheidungen?", a: "Strafstoß, Feldverweis. Geraten Spieler im Zuge eines Zweikampfes über die Spielfeld-Begrenzungslinien ins Aus und begehen dort ein Foulspiel gegen ihren Gegenspieler, wird dies so bestraft, als wäre der Tatort auf der Linie. Im Bereich der Außenlinie des Strafraums gibt es also folgerichtig den Strafstoß. Die Persönliche Strafe ergibt sich in dieser Situation aus der Schwere des Vergehens." },
+    { id: 171, q: "Situation 6: Einen in den Strafraum geschlagenen hohen Ball klatscht der Torwart zwecks Kontrolle ab. Er hätte diesen Ball eindeutig fangen können, allerdings klatscht er ihn so ab, dass er ihn nun mit den Füßen weiterspielen kann. Als er von einem Stürmer attackiert wird, nimmt er den Ball in die Hand und schlägt ihn aus der Hand mit dem Fuß ab. Wie entscheidet der Schiedsrichter?", a: "Weiterspielen. Mittlerweile wird bei dem Torwart nur unterschieden, ob er den Ball kontrolliert hat oder nicht. Nicht mehr, ob er ihn zwecks Kontrolle oder aus anderen Gründen abgeklatscht hat." },
+    { id: 172, q: "Situation 7: In der 15. Minute verwarnt der Schiedsrichter den Spieler Nr. 16 des Heimvereins wegen Reklamierens. Beim Notieren stellt er fest, dass es ein nominierter Auswechselspieler ist, der vor Spielbeginn gegen die Nr. 6 der Startformation getauscht wurde. Der Schiedsrichter wurde davon nicht in Kenntnis gesetzt. Was ist zu tun?", a: "Indirekter Freistoß, Verwarnung. Der Spieler wird nur wegen des Reklamierens verwarnt. Der Wechsel vor Spielbeginn ohne Mitteilung an den Schiedsrichter wird nur gemeldet. Der Spieler darf auf dem Spielfeld bleiben, und auch das Auswechselkontingent wird nicht belastet." },
+    { id: 173, q: "Situation 8: Bevor der Ball beim Eckstoß ins Spiel brought wird, stößt der Stürmer seinen Gegenspieler mit beiden Händen zu Boden. Nachdem der Ball in den Strafraum geschossen wird, verwandelt er dann per Kopfball für seine Mannschaft. Der Schiedsrichter-Assistent hat den Vorfall gesehen. Wie reagiert das Team und wie wird das Spiel fortgesetzt?", a: "Fahnenzeichen, Meldung an den Schiedsrichter. Da es sich hier um eine klare und offensichtliche Situation handelt, soll er diese auch offen mit der Fahne anzeigen. Nach Rücksprache mit dem Schiedsrichter wird dieser das Spiel anschließend mit einem Eckstoß fortsetzen, da der Ball zum Zeitpunkt des Vergehens noch nicht im Spiel war." },
+    { id: 174, q: "Situation 9: Einen Abstoß versucht der Torwart schnell ins Spiel zu bringen, indem er den Ball auf den Boden legt und ihn mit der Faust zu einem etwa vier Meter entfernten Mitspieler stößt. Dieser ist jedoch davon so überrascht, dass er den Ball in die Hand nimmt und ihn zum Torwart zurückwirft. Wie entscheidet der Schiedsrichter?", a: "Wiederholung des Abstoßes. Der Torwart darf zwar den Ball regulär mit der Hand spielen, jedoch dürfen Spielfortsetzungen wie Freistöße, Abstöße, Eckstöße etc. nur mit dem Fuß ausgeführt werden. Selbst ein Torwart hat hier kein Sonderrecht beim Ausführen von Spielfortsetzungen." },
+    { id: 175, q: "Situation 10: Zur Ausführung eines Abstoßes holt der Torwart hinter dem Tor den Ball und wirft ihn seinem Verteidiger zu. Dieser bringt ihn sofort mit dem Fuß ins Spiel. Der Ball wird knapp innerhalb des Strafraums vom Angreifer korrekt abgefangen und in das noch leere Tor geschossen. Der Torhüter war noch nicht auf dem Spielfeld. Wie ist zu entscheiden?", a: "Anstoß. Das Tor wurde korrekt erzielt, da der Torhüter berechtigt das Spielfeld verlassen hatte und er selbst die schnelle Spielfortsetzung herbeigeführt hat." },
+    { id: 176, q: "Situation 11: Nach einem Torerfolg jubelt der Spieler mit einer recht eigenwilligen, allerdings nicht übertriebenen Geste. Wie verhält sich der Schiedsrichter, wenn er die Jubel-Geste des Spielers nicht richtig deuten kann?", a: "Der Schiedsrichter meldet den Vorfall. Nur wenn der Schiedsrichter die Geste als klar unsportlich identifiziert, wird er hier mit einer Disziplinarmaßnahme tätig. Sind beim Schiedsrichter allerdings Zweifel, um welche Geste es sich handelt und was sie bedeutet, so gibt es lediglich eine Meldepflicht. Hier orientieren wir uns auch an politischen oder sonstigen Botschaften auf Trikots, die der Meldepflicht unterliegen." },
+    { id: 177, q: "Situation 12: Ein Stürmer verlässt über die Torlinie das Spielfeld und entzieht sich dadurch einer Abseitsstellung. Obwohl die Spielsituation, die ihn zum Verlassen des Spielfeldes veranlasste, noch nicht abgeschlossen ist, läuft dieser Spieler auf das Feld und greift den ballführenden Torwart an. Der Torwart nimmt den Ball nun zum wiederholten Mal mit den Händen auf. Wie ist zu entscheiden?", a: "Direkter Freistoß für den Torwart, Verwarnung des Angreifers wegen unerlaubten Betretens und Eingriffs ins Spiel. Dessen Vergehen liegt zeitlich eindeutig vor der unzulässigen Aufnahme des Balls durch den Torwart und ist somit entscheidend für die Spielfortsetzung." },
+    { id: 178, q: "Situation 13: Verlängerung bei einem Kreispokalspiel: Kurz vor dem Ende der Verlängerung lässt sich ein Spieler außerhalb des Spielfeldes behandeln. Noch bevor der Spieler wieder ins Spiel zurückkommen kann, pfeift der Schiedsrichter beim Stand von 1:1 das Spiel ab, sodass es zum Elfmeterschießen kommt. Darf der Spieler, der beim Schlusspfiff nicht mehr auf dem Feld war, weil er behandelt wurde, am Elfmeterschießen teilnehmen?", a: "Ja, das darf er, da er zu den elf teilnahmeberechtigten Spielern gehört." },
+    { id: 179, q: "Situation 14: Ein Eckstoß wird in den Torraum geschlagen. Der zentrale Stürmer verlängert den Ball ins Tor. Bei dieser Verlängerung steht ein Mitspieler hinter dem Torhüter im Abseits und somit nicht in der Sichtlinie des Torhüters. Allerdings berührt er den Torwart am Oberschenkel, bevor dieser abspringt, um den Ball zu erreichen. Wie entscheiden der Schiedsrichter und der Schiedsrichter-Assistent?", a: "Fahnenzeichen, Abseits. Allein schon durch die Berührung ist ein Eingriff ins Spiel gegeben – unabhängig davon, ob der Spieler im Abseits im Sichtfeld steht oder nicht." },
+    { id: 180, q: "Situation 15: Beim Parieren eines Torschusses gleitet der noch nicht sicher kontrollierte Ball dem Torwart aus den Händen. Anschließend versucht er, am Boden liegend, den Ball unter Kontrolle zu bringen. Dabei hat er bereits eine Hand am Ball und drückt diesen gegen den Pfosten, als ein Angreifer den Ball mit dem Fuß ins Tor schießt, ohne dabei den Torwart zu berühren. Entscheidung?", a: "Indirekter Freistoß. Sobald der Torwart einen Teil seiner Hand am Ball hat und diesen fixiert und somit kontrolliert, darf ein Gegenspieler den Ball nicht mehr spielen. Das Vergehen gilt als gefährliches Spiel. Da der Torwart dabei nicht getroffen wurde, ist daraus kein verbotenes Spiel geworden." }
+  ]; 
+       
+
+  /* =========================================
+     2. AUDIO SIGNALTON (Web Audio API)
+     ========================================= */
+ let audioCtx = null;
+
+  function playBeep() {
+    try {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+      gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.15);
+    } catch (e) {
+      console.warn("Audio blockiert:", e);
+    }
+  }
+  
+
+  /* =========================================
+     3. SPACED REPETITION LOGIK (Storage)
+     ========================================= */
+ function getSrsData() {
+    let data = {};
+    const raw = localStorage.getItem('regeltest_srs');
+    if (raw) {
+      try {
+        data = JSON.parse(raw);
+      } catch (e) {
+        data = {};
+      }
+    }
+
+    // Prüfen, ob alle aktuellen Fragen im Speicher vorhanden sind
+    let updated = false;
+    DEFAULT_QUESTIONS.forEach(q => {
+      if (!data[q.id]) {
+        data[q.id] = 1; // Neue Fragen starten automatisch in Stufe 1
+        updated = true;
+      }
+    });
+
+    if (updated || !raw) {
+      localStorage.setItem('regeltest_srs', JSON.stringify(data));
+    }
+
+    return data;
+  }
+
+  function saveSrsLevel(id, correct) {
+    const data = getSrsData();
+    let current = data[id] || 1;
+    if (correct) {
+      current = Math.min(current + 1, 3); // Max Level 3
+    } else {
+      current = 1; // Zurück auf Level 1 bei Fehlern
+    }
+    data[id] = current;
+    localStorage.setItem('regeltest_srs', JSON.stringify(data));
+    updateStatsDisplay();
+  }
+
+  function updateStatsDisplay() {
+    const data = getSrsData();
+    let l1 = 0, l2 = 0, l3 = 0;
+    Object.values(data).forEach(lvl => {
+      if (lvl === 1) l1++;
+      if (lvl === 2) l2++;
+      if (lvl === 3) l3++;
+    });
+    document.getElementById('srs-stats').innerText = 
+      `Lernpool: ${l1} ungelernte/falsche (Stufe 1) | ${l2} mittlere (Stufe 2) | ${l3} sichere (Stufe 3)`;
+  }
+
+  function resetSrsProgress() {
+    if (confirm("Möchtest du deinen Lernfortschritt wirklich auf Null setzen?")) {
+      localStorage.removeItem('regeltest_srs');
+      updateStatsDisplay();
+    }
+  }
+
+  /* =========================================
+     4. PRÜFUNGSMODUS (15 Fragen, je 15 Sek.)
+     ========================================= */
+  let examQuestions = [];
+  let examIndex = 0;
+  let examInterval = null;
+  let examTimeout = null;
+
+  function startExam() {
+    // 15 zufällige Fragen ziehen
+    const shuffled = [...DEFAULT_QUESTIONS].sort(() => 0.5 - Math.random());
+    examQuestions = shuffled.slice(0, 15);
+    examIndex = 0;
+    
+    showView('view-exam');
+    loadNextExamQuestion();
+  }
+
+  function loadNextExamQuestion() {
+    if (examIndex >= examQuestions.length) {
+      finishExam();
+      return;
+    }
+
+    playBeep(); // Akustisches Signal für Fragewechsel
+
+    const currentQ = examQuestions[examIndex];
+    document.getElementById('exam-counter').innerText = `Frage ${examIndex + 1} / 15`;
+    document.getElementById('exam-question-text').innerText = currentQ.q;
+
+    // Timer Visualisierung
+    const bar = document.getElementById('exam-progress');
+    bar.classList.remove('exam-active');
+    bar.style.width = '100%';
+    void bar.offsetWidth; // Force Reflow
+    bar.classList.add('exam-active');
+
+    // Sekunden-Zähler
+    let secLeft = 15;
+    const numDisplay = document.getElementById('exam-timer-num');
+    numDisplay.innerText = secLeft + 's';
+    
+    clearInterval(examInterval);
+    examInterval = setInterval(() => {
+      secLeft--;
+      if (secLeft >= 0) numDisplay.innerText = secLeft + 's';
+    }, 1000);
+
+    // Automatischer Sprung nach exakt 15 Sekunden
+    clearTimeout(examTimeout);
+    examTimeout = setTimeout(() => {
+      examIndex++;
+      loadNextExamQuestion();
+    }, 10000);
+  }
+
+  function finishExam() {
+    clearInterval(examInterval);
+    clearTimeout(examTimeout);
+
+    const list = document.getElementById('exam-result-list');
+    list.innerHTML = '';
+
+    examQuestions.forEach((q, idx) => {
+      const item = document.createElement('div');
+      item.className = 'result-item';
+      item.innerHTML = `<div><strong>${idx + 1}. Frage:</strong> ${q.q}</div>
+                        <div style="margin-top: 0.5rem;"><strong>Lösung:</strong> ${q.a}</div>`;
+      list.appendChild(item);
+    });
+
+    showView('view-exam-result');
+  }
+
+  /* =========================================
+     5. TRAININGSMODUS (Spaced Repetition & Freitext)
+     ========================================= */
+  let currentTrainingQuestion = null;
+
+  function pickTrainingQuestion() {
+    const srsData = getSrsData();
+    // Gewichtung: Level 1 wird 5x gewichtet, Level 2 = 2x, Level 3 = 1x
+    const weightedPool = [];
+    DEFAULT_QUESTIONS.forEach(q => {
+      const lvl = srsData[q.id] || 1;
+      const weight = lvl === 1 ? 5 : (lvl === 2 ? 2 : 1);
+      for (let i = 0; i < weight; i++) weightedPool.push(q);
+    });
+
+    const chosen = weightedPool[Math.floor(Math.random() * weightedPool.length)];
+    return chosen;
+  }
+
+  function startTraining() {
+    showView('view-training');
+    nextTrainingRound();
+  }
+
+  function nextTrainingRound() {
+    currentTrainingQuestion = pickTrainingQuestion();
+    const srsData = getSrsData();
+    const lvl = srsData[currentTrainingQuestion.id] || 1;
+
+    document.getElementById('training-level-badge').innerText = `Kasten: Stufe ${lvl}`;
+    document.getElementById('training-question-text').innerText = currentTrainingQuestion.q;
+    document.getElementById('training-input').value = '';
+    
+    // UI auf Reset setzen
+    document.getElementById('training-step-1').classList.remove('hidden');
+    document.getElementById('training-solution-area').classList.add('hidden');
+    document.getElementById('training-input').disabled = false;
+    document.getElementById('training-input').focus();
+  }
+
+  function checkTrainingAnswer() {
+    document.getElementById('training-step-1').classList.add('hidden');
+    document.getElementById('training-solution-area').classList.remove('hidden');
+    document.getElementById('training-solution-text').innerText = currentTrainingQuestion.a;
+    document.getElementById('training-input').disabled = true;
+  }
+
+  function rateTraining(wasCorrect) {
+    saveSrsLevel(currentTrainingQuestion.id, wasCorrect);
+    nextTrainingRound();
+  }
+
+  /* =========================================
+     6. NAVIGATION / VIEW SWITCHER
+     ========================================= */
+  function showView(viewId) {
+    // Evtl. laufende Prüfungs-Timer stoppen
+    clearInterval(examInterval);
+    clearTimeout(examTimeout);
+
+    ['view-start', 'view-exam', 'view-exam-result', 'view-training'].forEach(id => {
+      document.getElementById(id).classList.add('hidden');
+    });
+    document.getElementById(viewId).classList.remove('hidden');
+  }
+
+  function showStartView() {
+    updateStatsDisplay();
+    showView('view-start');
+  }
+
+  // Initialisierung beim Start
+  updateStatsDisplay();
+</script>
+</body>
+</html>
